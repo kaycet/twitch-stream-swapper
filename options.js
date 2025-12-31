@@ -54,9 +54,6 @@ class OptionsManager {
         this.showPremiumReminder();
       }
     });
-
-    // Notification delete button (set up when notification is shown)
-    // The delete button handler will be set up in showPremiumReminder
   }
 
   render() {
@@ -138,17 +135,6 @@ class OptionsManager {
   showPremiumReminder() {
     const reminder = document.getElementById('premiumReminder');
     reminder.style.display = 'block';
-    
-    // Set up delete button handler
-    const deleteBtn = reminder.querySelector('.delete');
-    if (deleteBtn) {
-      // Remove any existing listeners by cloning
-      const newDeleteBtn = deleteBtn.cloneNode(true);
-      deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
-      newDeleteBtn.addEventListener('click', () => {
-        reminder.style.display = 'none';
-      });
-    }
     
     // Hide after 5 seconds
     setTimeout(() => {
@@ -257,7 +243,7 @@ class OptionsManager {
         .slice(0, 10); // Top 10
 
       if (entries.length === 0) {
-        viewingTimeList.innerHTML = '<p class="has-text-grey">No viewing data yet.</p>';
+        viewingTimeList.innerHTML = '<p style="color: #adadb8; padding: 12px;">No viewing data yet.</p>';
       } else {
         entries.forEach(([username, seconds]) => {
           const hours = Math.floor(seconds / 3600);

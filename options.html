@@ -4,271 +4,232 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Twitch Stream Rotator - Settings</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/bulma@0.9.4/css/bulma.min.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <div class="container is-max-desktop">
-    <nav class="navbar is-dark" role="navigation" aria-label="main navigation">
-      <div class="navbar-brand">
-        <div class="navbar-item">
-          <h1 class="title is-4 has-text-white">⚙️ Settings</h1>
-        </div>
-      </div>
-      <div class="navbar-end">
-        <div class="navbar-item">
-          <a href="popup.html" class="button is-text has-text-primary">← Back to Extension</a>
-        </div>
-      </div>
-    </nav>
+  <div class="container">
+    <header>
+      <h1>⚙️ Settings</h1>
+      <a href="popup.html" class="back-link">← Back to Extension</a>
+    </header>
 
-    <div class="section">
+    <div class="content">
       <!-- Basic Settings -->
-      <div class="card">
-        <div class="card-header">
-          <p class="card-header-title">Basic Settings</p>
+      <section class="settings-section">
+        <h2>Basic Settings</h2>
+        
+        <div class="setting-item">
+          <label for="clientId">
+            <span>Twitch Client ID</span>
+            <span class="hint">Required for API access. Get one at <a href="https://dev.twitch.tv/console/apps" target="_blank">Twitch Developer Console</a></span>
+          </label>
+          <input 
+            type="text" 
+            id="clientId" 
+            placeholder="Enter your Twitch Client ID"
+            autocomplete="off"
+          >
         </div>
-        <div class="card-content">
-          <div class="field">
-            <label class="label" for="clientId">Twitch Client ID</label>
-            <div class="control">
-              <input 
-                class="input" 
-                type="text" 
-                id="clientId" 
-                placeholder="Enter your Twitch Client ID"
-                autocomplete="off"
-              >
-            </div>
-            <p class="help">Required for API access. Get one at <a href="https://dev.twitch.tv/console/apps" target="_blank">Twitch Developer Console</a></p>
-          </div>
 
-          <div class="field">
-            <label class="label" for="checkInterval">Check Interval</label>
-            <div class="control">
-              <input 
-                class="input" 
-                type="number" 
-                id="checkInterval" 
-                min="30000" 
-                max="300000" 
-                step="10000"
-                placeholder="60000"
-              >
-            </div>
-            <p class="help">How often to check if streams go live (in milliseconds). Default: 60000 = 1 minute</p>
-          </div>
-
-          <div class="field">
-            <div class="control">
-              <label class="checkbox">
-                <input type="checkbox" id="redirectEnabled">
-                Enable Auto-Switching
-              </label>
-            </div>
-            <p class="help">Automatically redirect to higher priority streams when they go live</p>
-          </div>
+        <div class="setting-item">
+          <label for="checkInterval">
+            <span>Check Interval</span>
+            <span class="hint">How often to check if streams go live (in milliseconds)</span>
+          </label>
+          <input 
+            type="number" 
+            id="checkInterval" 
+            min="30000" 
+            max="300000" 
+            step="10000"
+            placeholder="60000"
+          >
+          <span class="unit">ms (default: 60000 = 1 minute)</span>
         </div>
-      </div>
+
+        <div class="setting-item">
+          <label for="redirectEnabled">
+            <input type="checkbox" id="redirectEnabled">
+            <span>Enable Auto-Switching</span>
+            <span class="hint">Automatically redirect to higher priority streams when they go live</span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <label for="promptBeforeSwitch">
+            <input type="checkbox" id="promptBeforeSwitch">
+            <span>Prompt Before Switching</span>
+            <span class="hint">Show a notification prompt before switching streams (default: off - auto-swaps)</span>
+          </label>
+        </div>
+      </section>
 
       <!-- Category Fallback -->
-      <div class="card">
-        <div class="card-header">
-          <p class="card-header-title">Category Fallback</p>
+      <section class="settings-section">
+        <h2>Category Fallback</h2>
+        <p class="section-description">When no streams in your list are live, show a random stream from a category</p>
+        
+        <div class="setting-item">
+          <label for="fallbackCategory">
+            <span>Category Name</span>
+            <span class="hint">Twitch category/game name (e.g., "Just Chatting", "League of Legends")</span>
+          </label>
+          <input 
+            type="text" 
+            id="fallbackCategory" 
+            placeholder="Just Chatting"
+            autocomplete="off"
+          >
         </div>
-        <div class="card-content">
-          <p class="content">When no streams in your list are live, show a random stream from a category</p>
-          
-          <div class="field">
-            <label class="label" for="fallbackCategory">Category Name</label>
-            <div class="control">
-              <input 
-                class="input" 
-                type="text" 
-                id="fallbackCategory" 
-                placeholder="Just Chatting"
-                autocomplete="off"
-              >
-            </div>
-            <p class="help">Twitch category/game name (e.g., "Just Chatting", "League of Legends")</p>
-          </div>
 
-          <div class="field">
-            <div class="control">
-              <label class="checkbox">
-                <input type="checkbox" id="fallbackEnabled">
-                Enable Category Fallback
-              </label>
-            </div>
-          </div>
+        <div class="setting-item">
+          <label for="fallbackEnabled">
+            <input type="checkbox" id="fallbackEnabled">
+            <span>Enable Category Fallback</span>
+          </label>
         </div>
-      </div>
+      </section>
 
       <!-- Premium Features -->
-      <div class="box premium-section">
-        <h2 class="title is-4">
+      <section class="settings-section premium-section">
+        <h2>
           Premium Features
-          <span class="tag is-warning is-medium">⭐</span>
+          <span class="premium-badge">⭐</span>
         </h2>
-        <p class="subtitle is-6">Support the developer to unlock premium features!</p>
+        <p class="section-description">Support the developer to unlock premium features!</p>
 
-        <div class="field">
-          <div class="control">
-            <label class="checkbox">
-              <input type="checkbox" id="premiumStatus" disabled>
-              Premium Status
-            </label>
-          </div>
-          <p class="help">Unlock by supporting the developer (see Donations section)</p>
+        <div class="setting-item">
+          <label for="premiumStatus">
+            <input type="checkbox" id="premiumStatus" disabled>
+            <span>Premium Status</span>
+            <span class="hint">Unlock by supporting the developer (see Donations section)</span>
+          </label>
         </div>
 
-        <div class="field premium-feature">
-          <div class="control">
-            <label class="checkbox">
-              <input type="checkbox" id="notificationsEnabled">
-              Desktop Notifications
-            </label>
-          </div>
-          <p class="help premium-hint">Get notified when streams go live</p>
+        <div class="setting-item premium-feature">
+          <label for="notificationsEnabled">
+            <input type="checkbox" id="notificationsEnabled">
+            <span>Desktop Notifications</span>
+            <span class="hint premium-hint">Get notified when streams go live</span>
+          </label>
         </div>
 
-        <div class="field premium-feature">
-          <label class="label" for="theme">Theme</label>
-          <div class="control">
-            <div class="select is-fullwidth">
-              <select id="theme">
-                <option value="default">Default</option>
-                <option value="dark">Dark</option>
-                <option value="neon">Neon</option>
-              </select>
-            </div>
-          </div>
-          <p class="help premium-hint">Choose a custom theme for the extension</p>
+        <div class="setting-item premium-feature">
+          <label for="theme">
+            <span>Theme</span>
+            <span class="hint premium-hint">Choose a custom theme for the extension</span>
+          </label>
+          <select id="theme">
+            <option value="default">Default</option>
+            <option value="dark">Dark</option>
+            <option value="neon">Neon</option>
+          </select>
         </div>
 
-        <div class="notification is-info is-light" id="premiumReminder" style="display: none;">
-          <button class="delete"></button>
+        <div class="premium-reminder" id="premiumReminder" style="display: none;">
           <p>💡 <strong>Premium Feature:</strong> Support the developer to unlock this feature permanently!</p>
         </div>
-      </div>
+      </section>
 
       <!-- Analytics (Premium) -->
-      <div class="box premium-section" id="analyticsSection" style="display: none;">
-        <h2 class="title is-4">
+      <section class="settings-section premium-section" id="analyticsSection" style="display: none;">
+        <h2>
           Analytics
-          <span class="tag is-warning is-medium">⭐</span>
+          <span class="premium-badge">⭐</span>
         </h2>
 
         <div id="analyticsContent">
-          <div class="columns is-multiline">
-            <div class="column is-half">
-              <div class="box has-background-dark">
-                <p class="heading">Total Switches</p>
-                <p class="title is-3 has-text-primary" id="totalSwitches">0</p>
-              </div>
+          <div class="analytics-stats">
+            <div class="stat-item">
+              <span class="stat-label">Total Switches:</span>
+              <span class="stat-value" id="totalSwitches">0</span>
             </div>
-            <div class="column is-half">
-              <div class="box has-background-dark">
-                <p class="heading">Last Switch</p>
-                <p class="title is-5 has-text-primary" id="lastSwitch">Never</p>
-              </div>
+            <div class="stat-item">
+              <span class="stat-label">Last Switch:</span>
+              <span class="stat-value" id="lastSwitch">Never</span>
             </div>
           </div>
 
-          <div class="content">
-            <h3 class="title is-5">Viewing Time by Stream</h3>
+          <div class="viewing-time">
+            <h3>Viewing Time by Stream</h3>
             <div id="viewingTimeList" class="viewing-time-list"></div>
           </div>
 
-          <div class="field">
-            <div class="control">
-              <button id="clearAnalytics" class="button is-dark">Clear Analytics</button>
-            </div>
-          </div>
+          <button id="clearAnalytics" class="btn btn-secondary">Clear Analytics</button>
         </div>
-      </div>
+      </section>
 
       <!-- Donations -->
-      <div class="box donation-section">
-        <h2 class="title is-4">💝 Support the Developer</h2>
-        <p class="subtitle is-6">
+      <section class="settings-section donation-section">
+        <h2>💝 Support the Developer</h2>
+        <p class="section-description">
           Love this extension? Consider supporting development! Premium features are unlocked with any donation.
         </p>
 
         <div class="donation-links">
-          <div class="field">
-            <label class="label" for="kofiLink">Ko-fi Link</label>
-            <div class="control">
-              <input 
-                class="input" 
-                type="url" 
-                id="kofiLink" 
-                placeholder="https://ko-fi.com/yourname"
-                autocomplete="off"
-              >
-            </div>
-            <p class="help">Your Ko-fi donation link</p>
+          <div class="setting-item">
+            <label for="kofiLink">
+              <span>Ko-fi Link</span>
+              <span class="hint">Your Ko-fi donation link</span>
+            </label>
+            <input 
+              type="url" 
+              id="kofiLink" 
+              placeholder="https://ko-fi.com/yourname"
+              autocomplete="off"
+            >
           </div>
 
-          <div class="field">
-            <label class="label" for="paypalLink">PayPal Link</label>
-            <div class="control">
-              <input 
-                class="input" 
-                type="url" 
-                id="paypalLink" 
-                placeholder="https://paypal.me/yourname"
-                autocomplete="off"
-              >
-            </div>
-            <p class="help">Your PayPal donation link</p>
+          <div class="setting-item">
+            <label for="paypalLink">
+              <span>PayPal Link</span>
+              <span class="hint">Your PayPal donation link</span>
+            </label>
+            <input 
+              type="url" 
+              id="paypalLink" 
+              placeholder="https://paypal.me/yourname"
+              autocomplete="off"
+            >
           </div>
 
-          <div class="field is-grouped" id="donationButtons" style="display: none;">
-            <div class="control">
-              <a id="kofiBtn" href="#" target="_blank" class="button is-danger" style="display: none;">
-                ☕ Support on Ko-fi
-              </a>
-            </div>
-            <div class="control">
-              <a id="paypalBtn" href="#" target="_blank" class="button is-success" style="display: none;">
-                💳 Support on PayPal
-              </a>
-            </div>
+          <div class="donation-buttons" id="donationButtons" style="display: none;">
+            <a id="kofiBtn" href="#" target="_blank" class="btn btn-donation kofi" style="display: none;">
+              ☕ Support on Ko-fi
+            </a>
+            <a id="paypalBtn" href="#" target="_blank" class="btn btn-donation paypal" style="display: none;">
+              💳 Support on PayPal
+            </a>
           </div>
         </div>
 
-        <hr>
-
-        <div class="field">
-          <label class="label" for="premiumCode">Premium Activation Code</label>
-          <div class="field has-addons">
-            <div class="control is-expanded">
-              <input 
-                class="input" 
-                type="text" 
-                id="premiumCode" 
-                placeholder="Enter activation code"
-                autocomplete="off"
-              >
-            </div>
-            <div class="control">
-              <button id="activatePremium" class="button is-primary">Activate</button>
-            </div>
+        <div class="premium-activation">
+          <label for="premiumCode">
+            <span>Premium Activation Code</span>
+            <span class="hint">Enter a code provided after donation to activate premium features</span>
+          </label>
+          <div class="premium-input-group">
+            <input 
+              type="text" 
+              id="premiumCode" 
+              placeholder="Enter activation code"
+              autocomplete="off"
+            >
+            <button id="activatePremium" class="btn btn-primary">Activate</button>
           </div>
-          <p class="help">Enter a code provided after donation to activate premium features</p>
         </div>
-      </div>
+      </section>
 
       <!-- Save Button -->
-      <div class="field is-grouped is-grouped-centered">
-        <div class="control">
-          <button id="saveBtn" class="button is-primary is-large">Save Settings</button>
-        </div>
-      </div>
-      <div class="has-text-centered">
+      <div class="actions">
+        <button id="saveBtn" class="btn btn-primary btn-large">Save Settings</button>
         <div id="saveStatus" class="save-status"></div>
       </div>
+    </div>
+
+    <div class="made-with-love">
+      Made with trans 🏳️‍⚧️ love
     </div>
   </div>
 
