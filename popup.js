@@ -9,7 +9,8 @@ class PopupManager {
     this.dragOverElement = null;
     this.debounceTimeout = null;
     this.statusCheckInterval = null;
-    this.selectedStreamUsername = null;
+    this.dragGhost = null;
+    this.dragOffset = { x: 0, y: 0 };
   }
 
   async init() {
@@ -56,63 +57,10 @@ class PopupManager {
       this.addStream();
     });
 
-    const streamInput = document.getElementById('streamInput');
-    
-    // Enter key in input (only when input is focused)
-    streamInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
+    // Enter key in input
+    document.getElementById('streamInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
         this.addStream();
-      }
-    });
-
-    // Ctrl+Enter or Cmd+Enter for adding stream (works globally)
-    document.addEventListener('keydown', (e) => {
-      // Ctrl+Enter or Cmd+Enter - Add stream
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        // Focus input if not already focused
-        if (document.activeElement !== streamInput) {
-          streamInput.focus();
-        }
-        this.addStream();
-        return;
-      }
-
-      // Ctrl+, or Cmd+, - Open settings
-      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
-        e.preventDefault();
-        chrome.runtime.openOptionsPage();
-        return;
-      }
-
-      // F5 - Refresh stream status
-      if (e.key === 'F5') {
-        e.preventDefault();
-        this.checkStreamStatuses();
-        this.showMessage('Refreshing stream status...', 'info');
-        return;
-      }
-
-      // Delete key - Remove selected stream
-      if (e.key === 'Delete' && this.selectedStreamUsername) {
-        e.preventDefault();
-        // Only delete if input is not focused (to avoid accidental deletions while typing)
-        if (document.activeElement !== streamInput && !streamInput.matches(':focus')) {
-          this.removeStream(this.selectedStreamUsername);
-          this.selectedStreamUsername = null;
-          this.updateSelection();
-        }
-        return;
-      }
-
-      // Arrow keys for navigation (optional enhancement)
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        // Only handle if input is not focused
-        if (document.activeElement !== streamInput && !streamInput.matches(':focus')) {
-          e.preventDefault();
-          this.navigateStreams(e.key === 'ArrowDown' ? 1 : -1);
-        }
       }
     });
 
@@ -121,41 +69,13 @@ class PopupManager {
       chrome.runtime.openOptionsPage();
     });
 
-    // Help button
-    document.getElementById('helpBtn').addEventListener('click', () => {
-      this.toggleHelpTooltip();
-    });
-
-    // Close help tooltip when clicking outside
-    document.getElementById('helpTooltip').addEventListener('click', (e) => {
-      if (e.target.id === 'helpTooltip') {
-        this.toggleHelpTooltip();
-      }
-    });
-
-    // Close help tooltip on Escape
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        const helpTooltip = document.getElementById('helpTooltip');
-        if (helpTooltip.style.display !== 'none') {
-          this.toggleHelpTooltip();
-        }
-      }
-    });
-
     // Debounced input validation
     let debounceTimeout;
-    streamInput.addEventListener('input', (e) => {
+    document.getElementById('streamInput').addEventListener('input', (e) => {
       clearTimeout(debounceTimeout);
       debounceTimeout = setTimeout(() => {
         this.validateUsername(e.target.value);
       }, 300);
-    });
-
-    // Clear selection when clicking on input
-    streamInput.addEventListener('focus', () => {
-      this.selectedStreamUsername = null;
-      this.updateSelection();
     });
   }
 
@@ -227,11 +147,6 @@ class PopupManager {
   async removeStream(username) {
     this.streams = this.streams.filter(s => s.username !== username);
     
-    // Clear selection if removed stream was selected
-    if (this.selectedStreamUsername === username) {
-      this.selectedStreamUsername = null;
-    }
-    
     // Reorder priorities
     this.streams.forEach((stream, index) => {
       stream.priority = index + 1;
@@ -276,9 +191,6 @@ class PopupManager {
 
     // Setup drag and drop
     this.setupDragAndDrop();
-    
-    // Update selection display
-    this.updateSelection();
   }
 
   createStreamItem(stream, index) {
@@ -287,11 +199,6 @@ class PopupManager {
     item.draggable = true;
     item.dataset.username = stream.username;
     item.dataset.priority = stream.priority;
-
-    // Add selected class if this is the selected stream
-    if (this.selectedStreamUsername === stream.username) {
-      item.classList.add('selected');
-    }
 
     const isLive = stream.isLive || false;
 
@@ -309,16 +216,6 @@ class PopupManager {
       </div>
     `;
 
-    // Click to select
-    item.addEventListener('click', (e) => {
-      // Don't select if clicking on remove button
-      if (e.target.closest('[data-action="remove"]')) {
-        return;
-      }
-      this.selectedStreamUsername = stream.username;
-      this.updateSelection();
-    });
-
     // Remove button
     item.querySelector('[data-action="remove"]').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -328,67 +225,55 @@ class PopupManager {
     return item;
   }
 
-  updateSelection() {
-    const items = document.querySelectorAll('.stream-item');
-    items.forEach(item => {
-      if (item.dataset.username === this.selectedStreamUsername) {
-        item.classList.add('selected');
-      } else {
-        item.classList.remove('selected');
-      }
-    });
-  }
-
-  navigateStreams(direction) {
-    if (this.streams.length === 0) return;
-
-    let currentIndex = -1;
-    if (this.selectedStreamUsername) {
-      currentIndex = this.streams.findIndex(s => s.username === this.selectedStreamUsername);
-    }
-
-    let newIndex;
-    if (currentIndex === -1) {
-      // No selection, start at first or last
-      newIndex = direction > 0 ? 0 : this.streams.length - 1;
-    } else {
-      newIndex = currentIndex + direction;
-      if (newIndex < 0) newIndex = this.streams.length - 1;
-      if (newIndex >= this.streams.length) newIndex = 0;
-    }
-
-    this.selectedStreamUsername = this.streams[newIndex].username;
-    this.updateSelection();
-
-    // Scroll into view
-    const selectedItem = document.querySelector(`[data-username="${this.selectedStreamUsername}"]`);
-    if (selectedItem) {
-      selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }
-
-  toggleHelpTooltip() {
-    const helpTooltip = document.getElementById('helpTooltip');
-    const isVisible = helpTooltip.style.display === 'flex';
-    helpTooltip.style.display = isVisible ? 'none' : 'flex';
-  }
-
   setupDragAndDrop() {
     const items = document.querySelectorAll('.stream-item');
+    const listContainer = document.querySelector('.stream-list');
+
+    // Track mouse position during drag for ghost positioning
+    const handleDocumentDragOver = (e) => {
+      if (this.dragGhost && e.clientX !== 0 && e.clientY !== 0) {
+        this.updateDragGhostPosition(e.clientX, e.clientY);
+      }
+    };
 
     items.forEach(item => {
       item.addEventListener('dragstart', (e) => {
         this.draggedElement = item;
         item.classList.add('dragging');
+        listContainer.classList.add('dragging-active');
+        
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/html', item.innerHTML);
+        
+        // Create custom drag ghost
+        this.createDragGhost(item, e);
+        
+        // Calculate offset for ghost positioning
+        const rect = item.getBoundingClientRect();
+        this.dragOffset = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
+        
+        // Add document-level dragover listener for ghost tracking
+        document.addEventListener('dragover', handleDocumentDragOver);
       });
 
       item.addEventListener('dragend', () => {
         item.classList.remove('dragging');
+        listContainer.classList.remove('dragging-active');
+        
+        // Remove drag ghost
+        this.removeDragGhost();
+        
+        // Remove document-level listener
+        document.removeEventListener('dragover', handleDocumentDragOver);
+        
+        // Clean up all drag states
         document.querySelectorAll('.stream-item').forEach(i => {
-          i.classList.remove('drag-over');
+          i.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
         });
+        
         this.draggedElement = null;
         this.dragOverElement = null;
       });
@@ -398,17 +283,41 @@ class PopupManager {
         e.dataTransfer.dropEffect = 'move';
 
         if (this.draggedElement && item !== this.draggedElement) {
-          item.classList.add('drag-over');
+          // Determine drop position (top or bottom half)
+          const rect = item.getBoundingClientRect();
+          const midpoint = rect.top + rect.height / 2;
+          const isAbove = e.clientY < midpoint;
+          
+          // Remove all drag-over classes first
+          item.classList.remove('drag-over-top', 'drag-over-bottom');
+          
+          // Add appropriate class based on position
+          if (isAbove) {
+            item.classList.add('drag-over', 'drag-over-top');
+          } else {
+            item.classList.add('drag-over', 'drag-over-bottom');
+          }
+          
           this.dragOverElement = item;
         }
       });
 
-      item.addEventListener('dragleave', () => {
-        item.classList.remove('drag-over');
+      item.addEventListener('dragenter', (e) => {
+        if (this.draggedElement && item !== this.draggedElement) {
+          item.classList.add('drag-target');
+        }
+      });
+
+      item.addEventListener('dragleave', (e) => {
+        // Only remove if we're actually leaving the element
+        if (!item.contains(e.relatedTarget)) {
+          item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
+        }
       });
 
       item.addEventListener('drop', async (e) => {
         e.preventDefault();
+        e.stopPropagation();
         
         if (this.draggedElement && this.dragOverElement) {
           await this.reorderStreams(
@@ -417,9 +326,73 @@ class PopupManager {
           );
         }
 
-        item.classList.remove('drag-over');
+        item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
       });
     });
+  }
+
+  createDragGhost(sourceElement, dragEvent) {
+    // Clone the element for the ghost
+    const ghost = sourceElement.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    
+    // Get computed styles to match appearance
+    const computedStyle = window.getComputedStyle(sourceElement);
+    ghost.style.width = `${sourceElement.offsetWidth}px`;
+    ghost.style.height = `${sourceElement.offsetHeight}px`;
+    ghost.style.background = computedStyle.background;
+    ghost.style.border = computedStyle.border;
+    ghost.style.borderRadius = computedStyle.borderRadius;
+    ghost.style.padding = computedStyle.padding;
+    ghost.style.display = 'flex';
+    ghost.style.alignItems = 'center';
+    ghost.style.gap = computedStyle.gap;
+    
+    // Remove action buttons from ghost
+    const actionBtns = ghost.querySelectorAll('.stream-actions');
+    actionBtns.forEach(btn => btn.remove());
+    
+    // Position absolutely
+    ghost.style.position = 'fixed';
+    ghost.style.margin = '0';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.zIndex = '10000';
+    
+    document.body.appendChild(ghost);
+    this.dragGhost = ghost;
+    
+    // Set initial position
+    this.updateDragGhostPosition(dragEvent.clientX, dragEvent.clientY);
+    
+    // Hide default drag image
+    const dragImage = document.createElement('div');
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-9999px';
+    dragImage.style.width = '1px';
+    dragImage.style.height = '1px';
+    document.body.appendChild(dragImage);
+    dragEvent.dataTransfer.setDragImage(dragImage, 0, 0);
+    
+    // Clean up drag image after a short delay
+    setTimeout(() => {
+      if (dragImage.parentNode) {
+        dragImage.parentNode.removeChild(dragImage);
+      }
+    }, 0);
+  }
+
+  updateDragGhostPosition(x, y) {
+    if (this.dragGhost) {
+      this.dragGhost.style.left = `${x - this.dragOffset.x}px`;
+      this.dragGhost.style.top = `${y - this.dragOffset.y}px`;
+    }
+  }
+
+  removeDragGhost() {
+    if (this.dragGhost) {
+      this.dragGhost.remove();
+      this.dragGhost = null;
+    }
   }
 
   async reorderStreams(draggedUsername, targetUsername) {
