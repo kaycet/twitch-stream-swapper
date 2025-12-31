@@ -5,6 +5,7 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
+import ErrorMessageManager from './utils/error-messages.js';
 
 class BackgroundWorker {
   constructor() {
@@ -14,7 +15,6 @@ class BackgroundWorker {
     this.isPolling = false;
     this.idleState = 'active';
     this.settings = null;
-    this.pendingSwitch = null; // Store pending switch when prompting
   }
 
   async init() {
@@ -47,29 +47,6 @@ class BackgroundWorker {
     // Listen for install/update
     chrome.runtime.onInstalled.addListener(() => {
       this.handleInstall();
-    });
-
-    // Listen for notification button clicks (global listener for all notifications)
-    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-      // Check if this is a switch prompt notification
-      if (this.pendingSwitch && this.pendingSwitch.notificationId === notificationId) {
-        if (buttonIndex === 0) {
-          // User clicked "Switch"
-          this.confirmSwitch();
-        } else if (buttonIndex === 1) {
-          // User clicked "Cancel"
-          this.cancelSwitch();
-        }
-      }
-    });
-
-    // Listen for notification clicks (global listener for all notifications)
-    chrome.notifications.onClicked.addListener((notificationId) => {
-      // Check if this is a switch prompt notification
-      if (this.pendingSwitch && this.pendingSwitch.notificationId === notificationId) {
-        // Default to switching if user clicks notification body
-        this.confirmSwitch();
-      }
     });
   }
 
@@ -207,17 +184,41 @@ class BackgroundWorker {
     } catch (error) {
       console.error('Error polling streams:', error);
       
-      // Exponential backoff on errors
-      if (error.message.includes('Client ID') || error.message.includes('401')) {
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
+      
+      // Handle different error types
+      if (error.code === 'AUTH_ERROR' || error.message.includes('Client ID') || error.message.includes('401')) {
+        // Stop polling for auth errors - user needs to fix settings
         this.stopPolling();
-      } else {
-        // Temporary backoff
+        console.error('Authentication error - polling stopped. Please check your Twitch Client ID in settings.');
+      } else if (error.code === 'RATE_LIMIT') {
+        // For rate limits, wait longer before retry
+        this.stopPolling();
+        const retryDelay = error.retryAfter ? error.retryAfter * 1000 : 120000; // 2 minutes default
+        setTimeout(() => {
+          if (this.idleState === 'active') {
+            this.startPolling();
+          }
+        }, retryDelay);
+        console.warn('Rate limit hit - will retry after delay');
+      } else if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
+        // Network errors - retry after shorter delay
         this.stopPolling();
         setTimeout(() => {
           if (this.idleState === 'active') {
             this.startPolling();
           }
         }, 60000); // Wait 1 minute before retry
+        console.warn('Network error - will retry in 1 minute');
+      } else {
+        // Other errors - exponential backoff
+        this.stopPolling();
+        setTimeout(() => {
+          if (this.idleState === 'active') {
+            this.startPolling();
+          }
+        }, 60000); // Wait 1 minute before retry
+        console.warn('Error occurred - will retry in 1 minute');
       }
     }
   }
@@ -231,105 +232,8 @@ class BackgroundWorker {
     const shouldSwitch = await this.shouldSwitchToStream(liveStream);
 
     if (shouldSwitch) {
-      // Check if prompting is enabled
-      if (this.settings?.promptBeforeSwitch) {
-        await this.promptForSwitch(liveStream);
-      } else {
-        // Auto-switch (default behavior)
-        await this.switchToStream(liveStream);
-        this.currentWatchingStream = liveStream.username;
-      }
-    }
-  }
-
-  async promptForSwitch(stream) {
-    // Don't prompt if there's already a pending switch for this stream
-    if (this.pendingSwitch && this.pendingSwitch.username === stream.username) {
-      return;
-    }
-
-    // Clear any existing pending switch
-    if (this.pendingSwitch) {
-      await this.clearPendingSwitch();
-    }
-
-    // Store pending switch
-    this.pendingSwitch = {
-      username: stream.username,
-      streamData: stream.streamData,
-      notificationId: `switch-prompt-${stream.username}-${Date.now()}`
-    };
-
-    try {
-      const notificationId = this.pendingSwitch.notificationId;
-      const streamTitle = stream.streamData?.title || 'Live';
-      const gameName = stream.streamData?.game_name || 'Unknown';
-
-      // Show notification with buttons
-      await chrome.notifications.create(notificationId, {
-        type: 'basic',
-        iconUrl: stream.streamData?.thumbnail_url?.replace('{width}x{height}', '128x128') || 'icons/icon-128.png',
-        title: `Switch to ${stream.username}?`,
-        message: `${streamTitle} - ${gameName}`,
-        buttons: [
-          { title: 'Switch' },
-          { title: 'Cancel' }
-        ],
-        requireInteraction: true
-      });
-
-      // Auto-cancel after 30 seconds if no response
-      setTimeout(() => {
-        if (this.pendingSwitch && this.pendingSwitch.notificationId === notificationId) {
-          this.cancelSwitch();
-        }
-      }, 30000);
-
-    } catch (error) {
-      console.error('Error showing switch prompt:', error);
-      // Fallback to auto-switch on error
-      await this.switchToStream(stream);
-      this.currentWatchingStream = stream.username;
-      this.pendingSwitch = null;
-    }
-  }
-
-  async confirmSwitch() {
-    if (!this.pendingSwitch) {
-      return;
-    }
-
-    const stream = {
-      username: this.pendingSwitch.username,
-      streamData: this.pendingSwitch.streamData
-    };
-
-    const notificationId = this.pendingSwitch.notificationId;
-
-    // Clear notification
-    await chrome.notifications.clear(notificationId);
-    await this.clearPendingSwitch();
-
-    // Perform the switch
-    await this.switchToStream(stream);
-    this.currentWatchingStream = stream.username;
-  }
-
-  async cancelSwitch() {
-    if (!this.pendingSwitch) {
-      return;
-    }
-
-    const notificationId = this.pendingSwitch.notificationId;
-
-    // Clear notification
-    await chrome.notifications.clear(notificationId);
-    await this.clearPendingSwitch();
-  }
-
-  async clearPendingSwitch() {
-    if (this.pendingSwitch) {
-      this.pendingSwitch = null;
+      await this.switchToStream(liveStream);
+      this.currentWatchingStream = liveStream.username;
     }
   }
 
@@ -423,6 +327,8 @@ class BackgroundWorker {
         }
       } catch (error) {
         console.error('Error getting fallback stream:', error);
+        // Don't show error to user for fallback - it's a background operation
+        // Just log it for debugging
       }
     });
   }

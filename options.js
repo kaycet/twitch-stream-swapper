@@ -1,5 +1,6 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
+import ErrorMessageManager from './utils/error-messages.js';
 
 class OptionsManager {
   constructor() {
@@ -143,7 +144,11 @@ class OptionsManager {
   }
 
   async saveSettings() {
+    const saveBtn = document.getElementById('saveBtn');
     try {
+      saveBtn.disabled = true;
+      this.showSaveStatus(ErrorMessageManager.getLoadingMessage('saveSettings'), 'loading');
+
       const newSettings = {
         clientId: document.getElementById('clientId').value.trim(),
         checkInterval: parseInt(document.getElementById('checkInterval').value) || 60000,
@@ -160,22 +165,43 @@ class OptionsManager {
         }
       };
 
+      // Validate check interval
+      if (newSettings.checkInterval < 30000 || newSettings.checkInterval > 300000) {
+        const errorInfo = ErrorMessageManager.getErrorMessage('Check interval must be between 30,000 and 300,000 milliseconds', 'saveSettings');
+        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+        return;
+      }
+
       // Validate client ID if provided
       if (newSettings.clientId) {
-        await twitchAPI.initialize(newSettings.clientId);
-        // Test the API
+        if (newSettings.clientId.length < 10) {
+          const errorInfo = ErrorMessageManager.getErrorMessage('Client ID appears to be invalid', 'saveSettings');
+          this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+          return;
+        }
+
         try {
+          await twitchAPI.initialize(newSettings.clientId);
+          // Test the API
           await twitchAPI.getCategoryId('Just Chatting');
         } catch (error) {
-          this.showSaveStatus('Invalid Twitch Client ID. Please check your settings.', 'error');
+          const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
+          this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
           return;
+        }
+      } else {
+        // Warn if no client ID but redirect is enabled
+        if (newSettings.redirectEnabled) {
+          this.showSaveStatus('Warning: Auto-switching requires a Twitch Client ID. Please configure one.', 'warning');
+          // Still save, but warn user
         }
       }
 
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
 
-      this.showSaveStatus('Settings saved successfully!', 'success');
+      const successInfo = ErrorMessageManager.getSuccessMessage('saveSettings');
+      this.showSaveStatus(successInfo.message, 'success');
       this.applyTheme();
 
       // Reload analytics if premium
@@ -184,33 +210,51 @@ class OptionsManager {
       }
     } catch (error) {
       console.error('Error saving settings:', error);
-      this.showSaveStatus('Error saving settings: ' + error.message, 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
+      this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+    } finally {
+      saveBtn.disabled = false;
     }
   }
 
   async activatePremium() {
     const code = document.getElementById('premiumCode').value.trim();
+    const activateBtn = document.getElementById('activatePremium');
     
     if (!code) {
-      this.showSaveStatus('Please enter an activation code', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Please enter an activation code', 'activatePremium');
+      this.showSaveStatus(errorInfo.message, 'error');
       return;
     }
 
-    // Simple activation (in production, this would verify with a server)
-    // For now, accept any non-empty code as activation
-    // In real implementation, you'd verify this with your donation platform
-    
-    // For demo purposes, accept codes like "PREMIUM2024" or similar
-    if (code.length > 5) {
-      this.settings.premiumStatus = true;
-      await storage.saveSettings(this.settings);
-      document.getElementById('premiumStatus').checked = true;
-      document.getElementById('premiumCode').value = '';
-      this.updatePremiumFeatures();
-      this.loadAnalytics();
-      this.showSaveStatus('Premium activated! Thank you for your support! 🎉', 'success');
-    } else {
-      this.showSaveStatus('Invalid activation code', 'error');
+    try {
+      activateBtn.disabled = true;
+      this.showSaveStatus(ErrorMessageManager.getLoadingMessage('activatePremium'), 'loading');
+
+      // Simple activation (in production, this would verify with a server)
+      // For now, accept any non-empty code as activation
+      // In real implementation, you'd verify this with your donation platform
+      
+      // For demo purposes, accept codes like "PREMIUM2024" or similar
+      if (code.length > 5) {
+        this.settings.premiumStatus = true;
+        await storage.saveSettings(this.settings);
+        document.getElementById('premiumStatus').checked = true;
+        document.getElementById('premiumCode').value = '';
+        this.updatePremiumFeatures();
+        this.loadAnalytics();
+        const successInfo = ErrorMessageManager.getSuccessMessage('activatePremium');
+        this.showSaveStatus(successInfo.message, 'success');
+      } else {
+        const errorInfo = ErrorMessageManager.getErrorMessage('Invalid activation code', 'activatePremium');
+        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+      }
+    } catch (error) {
+      console.error('Error activating premium:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'activatePremium');
+      this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+    } finally {
+      activateBtn.disabled = false;
     }
   }
 
@@ -271,17 +315,25 @@ class OptionsManager {
       return;
     }
 
+    const clearBtn = document.getElementById('clearAnalytics');
     try {
+      clearBtn.disabled = true;
+      this.showSaveStatus(ErrorMessageManager.getLoadingMessage('clearAnalytics'), 'loading');
+
       await storage.saveAnalytics({
         viewingTime: {},
         switchCount: 0,
         lastSwitch: null
       });
       this.loadAnalytics();
-      this.showSaveStatus('Analytics cleared', 'success');
+      const successInfo = ErrorMessageManager.getSuccessMessage('clearAnalytics');
+      this.showSaveStatus(successInfo.message, 'success');
     } catch (error) {
       console.error('Error clearing analytics:', error);
-      this.showSaveStatus('Error clearing analytics', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'clearAnalytics');
+      this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+    } finally {
+      clearBtn.disabled = false;
     }
   }
 
@@ -303,10 +355,14 @@ class OptionsManager {
     statusDiv.textContent = message;
     statusDiv.className = `save-status ${type}`;
 
-    setTimeout(() => {
-      statusDiv.textContent = '';
-      statusDiv.className = 'save-status';
-    }, 3000);
+    // Show longer for error messages with actions
+    const duration = type === 'error' ? 5000 : type === 'loading' ? 0 : 3000;
+    if (duration > 0) {
+      setTimeout(() => {
+        statusDiv.textContent = '';
+        statusDiv.className = 'save-status';
+      }, duration);
+    }
   }
 }
 

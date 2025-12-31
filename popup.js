@@ -1,5 +1,6 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
+import ErrorMessageManager from './utils/error-messages.js';
 
 class PopupManager {
   constructor() {
@@ -15,12 +16,12 @@ class PopupManager {
     await this.loadData();
     this.setupEventListeners();
     this.render();
-    this.updateConnectionStatus();
     this.startStatusPolling();
   }
 
   async loadData() {
     try {
+      this.showLoading('loadData');
       this.streams = await storage.getStreams();
       this.settings = await storage.getSettings();
       
@@ -34,9 +35,12 @@ class PopupManager {
 
       // Apply theme
       this.applyTheme();
+      this.hideLoading();
     } catch (error) {
       console.error('Error loading data:', error);
-      this.showMessage('Error loading data', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'loadData');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+      this.hideLoading();
     }
   }
 
@@ -76,112 +80,131 @@ class PopupManager {
         this.validateUsername(e.target.value);
       }, 300);
     });
-
-    // Twitch connection toggle
-    document.getElementById('toggleConnectionBtn').addEventListener('click', () => {
-      this.toggleConnectionSection();
-    });
-
-    // Connect button
-    document.getElementById('connectBtn').addEventListener('click', () => {
-      this.connectTwitch();
-    });
-
-    // Disconnect button
-    document.getElementById('disconnectBtn').addEventListener('click', () => {
-      this.disconnectTwitch();
-    });
-
-    // Test connection button
-    document.getElementById('testConnectionBtn').addEventListener('click', () => {
-      this.testConnection();
-    });
-
-    // Enter key in Client ID input
-    document.getElementById('clientIdInput').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        this.connectTwitch();
-      }
-    });
   }
 
   async validateUsername(username) {
-    if (!username || username.trim().length === 0) return;
+    if (!username || username.trim().length === 0) {
+      const input = document.getElementById('streamInput');
+      input.style.borderColor = '#3d3d47';
+      return;
+    }
     
-    // Basic validation - alphanumeric, underscores, hyphens
-    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
+    // Basic validation - alphanumeric, underscores
+    const trimmed = username.trim();
+    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(trimmed);
     const input = document.getElementById('streamInput');
     
-    if (!valid && username.trim().length > 0) {
-      input.classList.add('is-danger');
+    if (!valid) {
+      input.style.borderColor = '#e91916';
+      // Show helpful validation message using ErrorMessageManager
+      let errorMessage = 'Invalid username format';
+      if (trimmed.length < 4) {
+        errorMessage = 'Username must be at least 4 characters';
+      } else if (trimmed.length > 25) {
+        errorMessage = 'Username must be 25 characters or less';
+      } else if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+        errorMessage = 'Username can only contain letters, numbers, and underscores';
+      }
+      const errorInfo = ErrorMessageManager.getErrorMessage(errorMessage, 'addStream');
+      this.showMessage(errorInfo.message, errorInfo.type);
     } else {
-      input.classList.remove('is-danger');
+      input.style.borderColor = '#3d3d47';
     }
   }
 
   async addStream() {
     const input = document.getElementById('streamInput');
     const username = input.value.trim().toLowerCase();
+    const addBtn = document.getElementById('addStreamBtn');
 
     if (!username) {
-      this.showMessage('Please enter a username', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Please enter a username', 'addStream');
+      this.showMessage(errorInfo.message, errorInfo.type);
       return;
     }
 
     // Validate username format
     if (!/^[a-zA-Z0-9_]{4,25}$/.test(username)) {
-      this.showMessage('Invalid username format', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Invalid username format', 'addStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+      input.style.borderColor = '#e91916';
       return;
     }
 
     // Check if already exists
     if (this.streams.some(s => s.username.toLowerCase() === username)) {
-      this.showMessage('Stream already in list', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Stream already in list', 'addStream');
+      this.showMessage(errorInfo.message, errorInfo.type);
       input.value = '';
+      input.style.borderColor = '#3d3d47';
       return;
     }
 
     // Check free tier limit
     const isPremium = this.settings?.premiumStatus || false;
     if (!isPremium && this.streams.length >= 10) {
-      this.showMessage('Free tier limited to 10 streams. Upgrade for unlimited!', 'info');
-      // Still allow adding but show reminder
+      const errorInfo = ErrorMessageManager.getErrorMessage('Free tier limit reached', 'addStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
       setTimeout(() => {
         chrome.runtime.openOptionsPage();
       }, 2000);
       return;
     }
 
-    // Add stream
-    const newStream = {
-      username: username,
-      priority: this.streams.length + 1,
-      addedAt: Date.now()
-    };
+    try {
+      // Show loading state
+      addBtn.disabled = true;
+      addBtn.textContent = 'Adding...';
+      this.showLoading('addStream');
 
-    this.streams.push(newStream);
-    await storage.saveStreams(this.streams);
-    
-    input.value = '';
-    this.render();
-    this.showMessage(`Added ${username}`, 'success');
-    
-    // Check status immediately and re-render after status check completes
-    await this.checkStreamStatuses();
-    this.render();
+      // Add stream
+      const newStream = {
+        username: username,
+        priority: this.streams.length + 1,
+        addedAt: Date.now()
+      };
+
+      this.streams.push(newStream);
+      await storage.saveStreams(this.streams);
+      
+      input.value = '';
+      input.style.borderColor = '#3d3d47';
+      this.render();
+      
+      const successInfo = ErrorMessageManager.getSuccessMessage('addStream', { username });
+      this.showMessage(successInfo.message, successInfo.type);
+      
+      // Check status immediately
+      this.checkStreamStatuses();
+    } catch (error) {
+      console.error('Error adding stream:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'addStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Add';
+      this.hideLoading();
+    }
   }
 
   async removeStream(username) {
-    this.streams = this.streams.filter(s => s.username !== username);
-    
-    // Reorder priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+    try {
+      this.streams = this.streams.filter(s => s.username !== username);
+      
+      // Reorder priorities
+      this.streams.forEach((stream, index) => {
+        stream.priority = index + 1;
+      });
 
-    await storage.saveStreams(this.streams);
-    this.render();
-    this.showMessage('Stream removed', 'success');
+      await storage.saveStreams(this.streams);
+      this.render();
+      const successInfo = ErrorMessageManager.getSuccessMessage('removeStream');
+      this.showMessage(successInfo.message, successInfo.type);
+    } catch (error) {
+      console.error('Error removing stream:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'removeStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    }
   }
 
   render() {
@@ -222,7 +245,7 @@ class PopupManager {
 
   createStreamItem(stream, index) {
     const item = document.createElement('div');
-    item.className = 'stream-item card';
+    item.className = 'stream-item';
     item.draggable = true;
     item.dataset.username = stream.username;
     item.dataset.priority = stream.priority;
@@ -230,26 +253,16 @@ class PopupManager {
     const isLive = stream.isLive || false;
 
     item.innerHTML = `
-      <div class="card-content">
-        <div class="media">
-          <div class="media-left">
-            <div class="stream-handle">☰</div>
-          </div>
-          <div class="media-content">
-            <div class="stream-info">
-              <p class="stream-username title is-6">${stream.username}</p>
-              <p class="stream-status subtitle is-7">
-                <span class="status-indicator ${isLive ? 'live' : ''}"></span>
-                <span>${isLive ? 'Live' : 'Offline'}</span>
-              </p>
-            </div>
-          </div>
-          <div class="media-right">
-            <div class="stream-actions">
-              <button class="button is-ghost is-small" data-action="remove" title="Remove">×</button>
-            </div>
-          </div>
+      <div class="stream-handle">☰</div>
+      <div class="stream-info">
+        <div class="stream-username">${stream.username}</div>
+        <div class="stream-status">
+          <span class="status-indicator ${isLive ? 'live' : ''}"></span>
+          <span>${isLive ? 'Live' : 'Offline'}</span>
         </div>
+      </div>
+      <div class="stream-actions">
+        <button class="action-btn" data-action="remove" title="Remove">×</button>
       </div>
     `;
 
@@ -317,23 +330,36 @@ class PopupManager {
 
     if (draggedIndex === -1 || targetIndex === -1) return;
 
-    // Remove dragged item
-    const [dragged] = this.streams.splice(draggedIndex, 1);
-    
-    // Insert at target position
-    this.streams.splice(targetIndex, 0, dragged);
+    try {
+      // Remove dragged item
+      const [dragged] = this.streams.splice(draggedIndex, 1);
+      
+      // Insert at target position
+      this.streams.splice(targetIndex, 0, dragged);
 
-    // Update priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+      // Update priorities
+      this.streams.forEach((stream, index) => {
+        stream.priority = index + 1;
+      });
 
-    // Debounced save
-    clearTimeout(this.debounceTimeout);
-    this.debounceTimeout = setTimeout(async () => {
-      await storage.saveStreams(this.streams);
-      this.render();
-    }, 300);
+      // Debounced save
+      clearTimeout(this.debounceTimeout);
+      this.debounceTimeout = setTimeout(async () => {
+        try {
+          await storage.saveStreams(this.streams);
+          this.render();
+          // Don't show success message for reordering - it's too frequent
+        } catch (error) {
+          console.error('Error saving reordered streams:', error);
+          const errorInfo = ErrorMessageManager.getErrorMessage(error, 'reorderStreams');
+          this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+        }
+      }, 300);
+    } catch (error) {
+      console.error('Error reordering streams:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'reorderStreams');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    }
   }
 
   async checkStreamStatuses() {
@@ -347,6 +373,8 @@ class PopupManager {
         await twitchAPI.initialize(this.settings.clientId);
       } catch (error) {
         console.error('Failed to initialize Twitch API:', error);
+        const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
+        this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
         return;
       }
     }
@@ -365,26 +393,23 @@ class PopupManager {
         const wasLive = stream.isLive || false;
         const isLive = statuses[stream.username] !== null;
         
-        // Always update stream data to ensure new streams get their status
-        stream.isLive = isLive;
-        stream.streamData = statuses[stream.username];
-        
-        // Track if status actually changed for render optimization
         if (wasLive !== isLive) {
+          stream.isLive = isLive;
+          stream.streamData = statuses[stream.username];
           hasChanges = true;
         }
       });
 
-      // Always render after status check to ensure UI is up to date
-      this.render();
+      if (hasChanges) {
+        this.render();
+      }
 
       // Update current stream display
       this.updateCurrentStream();
     } catch (error) {
       console.error('Error checking stream statuses:', error);
-      if (error.message.includes('Client ID')) {
-        this.showMessage('Please configure Twitch Client ID in settings', 'error');
-      }
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
     }
   }
 
@@ -419,134 +444,24 @@ class PopupManager {
     messageDiv.textContent = text;
     messageDiv.className = `status-message show ${type}`;
 
+    // Show longer for error messages with actions
+    const duration = type === 'error' ? 5000 : 3000;
     setTimeout(() => {
       messageDiv.classList.remove('show');
-    }, 3000);
+    }, duration);
   }
 
-  toggleConnectionSection() {
-    const content = document.getElementById('connectionContent');
-    const toggleBtn = document.getElementById('toggleConnectionBtn');
-    const isVisible = content.style.display !== 'none';
-    
-    content.style.display = isVisible ? 'none' : 'block';
-    toggleBtn.textContent = isVisible ? '▼' : '▲';
+  showLoading(context) {
+    const messageDiv = document.getElementById('statusMessage');
+    const loadingText = ErrorMessageManager.getLoadingMessage(context);
+    messageDiv.textContent = loadingText;
+    messageDiv.className = 'status-message show loading';
   }
 
-  updateConnectionStatus() {
-    const hasClientId = !!this.settings?.clientId;
-    const indicator = document.getElementById('connectionIndicator');
-    const statusText = document.getElementById('connectionStatusText');
-    const inputGroup = document.getElementById('connectionInputGroup');
-    const actions = document.getElementById('connectionActions');
-    const clientIdInput = document.getElementById('clientIdInput');
-
-    if (hasClientId) {
-      indicator.classList.add('connected');
-      statusText.textContent = 'Connected';
-      inputGroup.style.display = 'none';
-      actions.style.display = 'flex';
-      clientIdInput.value = this.settings.clientId;
-    } else {
-      indicator.classList.remove('connected');
-      statusText.textContent = 'Not Connected';
-      inputGroup.style.display = 'flex';
-      actions.style.display = 'none';
-      clientIdInput.value = '';
-    }
-  }
-
-  async connectTwitch() {
-    const clientIdInput = document.getElementById('clientIdInput');
-    const clientId = clientIdInput.value.trim();
-
-    if (!clientId) {
-      this.showMessage('Please enter a Twitch Client ID', 'error');
-      return;
-    }
-
-    // Validate format (basic check)
-    if (clientId.length < 10) {
-      this.showMessage('Invalid Client ID format', 'error');
-      return;
-    }
-
-    try {
-      // Initialize and test the API
-      await twitchAPI.initialize(clientId);
-      
-      // Test the connection by making a simple API call
-      try {
-        await twitchAPI.getCategoryId('Just Chatting');
-      } catch (error) {
-        this.showMessage('Invalid Client ID. Please check your settings.', 'error');
-        return;
-      }
-
-      // Save to settings
-      this.settings = this.settings || {};
-      this.settings.clientId = clientId;
-      await storage.saveSettings(this.settings);
-
-      // Update UI
-      this.updateConnectionStatus();
-      this.showMessage('Twitch account connected successfully!', 'success');
-
-      // Check stream statuses immediately
-      this.checkStreamStatuses();
-    } catch (error) {
-      console.error('Error connecting Twitch:', error);
-      this.showMessage('Failed to connect: ' + error.message, 'error');
-    }
-  }
-
-  async disconnectTwitch() {
-    if (!confirm('Are you sure you want to disconnect your Twitch account?')) {
-      return;
-    }
-
-    try {
-      this.settings = this.settings || {};
-      this.settings.clientId = '';
-      await storage.saveSettings(this.settings);
-
-      // Clear Twitch API
-      twitchAPI.clientId = null;
-      twitchAPI.clearCache();
-
-      // Update UI
-      this.updateConnectionStatus();
-      this.showMessage('Twitch account disconnected', 'info');
-
-      // Clear stream statuses
-      this.streams.forEach(stream => {
-        stream.isLive = false;
-        stream.streamData = null;
-      });
-      this.render();
-    } catch (error) {
-      console.error('Error disconnecting Twitch:', error);
-      this.showMessage('Failed to disconnect', 'error');
-    }
-  }
-
-  async testConnection() {
-    if (!this.settings?.clientId) {
-      this.showMessage('No Client ID configured', 'error');
-      return;
-    }
-
-    try {
-      this.showMessage('Testing connection...', 'info');
-      
-      // Test the connection
-      await twitchAPI.initialize(this.settings.clientId);
-      await twitchAPI.getCategoryId('Just Chatting');
-      
-      this.showMessage('Connection test successful!', 'success');
-    } catch (error) {
-      console.error('Connection test failed:', error);
-      this.showMessage('Connection test failed: ' + error.message, 'error');
+  hideLoading() {
+    const messageDiv = document.getElementById('statusMessage');
+    if (messageDiv.classList.contains('loading')) {
+      messageDiv.classList.remove('show', 'loading');
     }
   }
 

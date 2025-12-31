@@ -10,6 +10,8 @@ A Chrome extension that automatically rotates between Twitch streams based on pr
 - **Category Fallback**: When no streams in your list are live, shows a random stream from a selected category
 - **Real-time Status**: Live/offline indicators for all streams in your list
 - **Smart Polling**: Efficient API usage with batching, caching, and rate limit handling
+- **Enhanced Error Handling**: Clear, actionable error messages for API failures, network issues, and configuration problems
+- **Loading States**: Visual feedback during operations with loading indicators
 
 ### Premium Features (Soft Paywall)
 - **Desktop Notifications**: Get notified when streams go live
@@ -94,21 +96,15 @@ twitch-stream-rotator/
 ├── utils/
 │   ├── twitch-api.js      # Twitch API wrapper
 │   ├── storage.js         # Storage utilities
-│   └── notifications.js   # Notification manager
+│   ├── notifications.js   # Notification manager
+│   └── error-messages.js  # Centralized error message utility
 ├── themes/                # Premium themes
 └── icons/                 # Extension icons
 ```
 
 ### Building Icons
 
-Icons are required for Chrome Web Store submission. 
-
-**Quick start:**
-1. Create `icons/icon-source.svg` with your icon design
-2. Run `npm install` to install dependencies
-3. Run `npm run generate-icons` to generate all PNG sizes
-
-See `ICONS.md` for detailed instructions and design guidelines.
+Icons are required for Chrome Web Store submission. See `ICONS.md` for generation instructions.
 
 ### Using Vibe Kanban
 
@@ -195,6 +191,22 @@ MIT License - see `LICENSE` file for details
 - For premium activation, contact the developer
 - Check the options page for donation links
 
+## Error Handling
+
+The extension provides comprehensive error handling with user-friendly messages:
+
+- **Network Errors**: Clear messages when internet connection fails with actionable steps
+- **Rate Limiting**: Automatic handling with user notifications and retry logic
+- **Invalid Usernames**: Real-time validation with helpful format guidance
+- **API Failures**: Specific error messages for different API issues (auth, server errors, etc.)
+- **Configuration Errors**: Guidance for fixing Client ID and settings issues
+- **Loading States**: Visual feedback during all async operations
+
+All error messages include:
+- Clear description of what went wrong
+- Actionable steps to resolve the issue
+- Consistent styling matching the extension UI
+
 ## Changelog
 
 ### v1.0.0
@@ -203,4 +215,6 @@ MIT License - see `LICENSE` file for details
 - Auto-switching
 - Category fallback
 - Premium features (notifications, themes, analytics)
+- Enhanced error handling and user feedback
+- Loading states for better UX
 

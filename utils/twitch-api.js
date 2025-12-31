@@ -94,32 +94,60 @@ class TwitchAPI {
     }
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       const response = await fetch(url, {
-        headers: this._getHeaders()
+        headers: this._getHeaders(),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         if (response.status === 429) {
           // Rate limited - wait and retry
           const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          const error = new Error('Rate limit exceeded');
+          error.code = 'RATE_LIMIT';
+          error.retryAfter = retryAfter;
           if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
             return this._request(endpoint, params, retries - 1);
           }
+          throw error;
         }
 
         if (response.status === 401) {
-          throw new Error('Invalid Twitch Client ID. Please check your settings.');
+          const error = new Error('Invalid Twitch Client ID. Please check your settings.');
+          error.code = 'AUTH_ERROR';
+          throw error;
         }
 
-        throw new Error(`Twitch API error: ${response.status} ${response.statusText}`);
+        if (response.status >= 500) {
+          const error = new Error(`Twitch API server error: ${response.status} ${response.statusText}`);
+          error.code = 'SERVER_ERROR';
+          throw error;
+        }
+
+        if (response.status === 404) {
+          const error = new Error('Resource not found');
+          error.code = 'NOT_FOUND';
+          throw error;
+        }
+
+        const error = new Error(`Twitch API error: ${response.status} ${response.statusText}`);
+        error.code = 'API_ERROR';
+        throw error;
       }
 
       let data;
       try {
         data = await response.json();
       } catch (parseError) {
-        throw new Error('Invalid JSON response from Twitch API');
+        const error = new Error('Invalid JSON response from Twitch API');
+        error.code = 'PARSE_ERROR';
+        throw error;
       }
 
       // Cache the result
@@ -130,12 +158,28 @@ class TwitchAPI {
 
       return data;
     } catch (error) {
-      if (retries > 0 && !error.message.includes('Client ID')) {
+      // Handle network errors
+      if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        const timeoutError = new Error('Request timed out. Please check your internet connection.');
+        timeoutError.code = 'TIMEOUT';
+        throw timeoutError;
+      }
+
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        const networkError = new Error('Network connection failed. Please check your internet connection.');
+        networkError.code = 'NETWORK_ERROR';
+        throw networkError;
+      }
+
+      // Retry logic for retryable errors
+      if (retries > 0 && !error.code || 
+          (error.code && ['SERVER_ERROR', 'TIMEOUT', 'NETWORK_ERROR'].includes(error.code))) {
         // Exponential backoff
         const delay = Math.pow(2, 3 - retries) * 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
         return this._request(endpoint, params, retries - 1);
       }
+
       throw error;
     }
   }
@@ -144,19 +188,28 @@ class TwitchAPI {
    * Check if multiple streams are live (batch request)
    * @param {string[]} usernames - Array of usernames (up to 100)
    * @returns {Promise<Object>} - Map of username -> stream data or null
+   * @throws {Error} - If there's a critical error that should be handled by caller
    */
   async checkStreamsStatus(usernames) {
     if (!usernames || usernames.length === 0) {
       return {};
     }
 
+    // Validate usernames
+    const validUsernames = usernames.filter(u => u && /^[a-zA-Z0-9_]{4,25}$/.test(u));
+    if (validUsernames.length === 0) {
+      throw new Error('Invalid username format');
+    }
+
     // Batch requests (Twitch allows up to 100 user_logins per request)
     const batches = [];
-    for (let i = 0; i < usernames.length; i += 100) {
-      batches.push(usernames.slice(i, i + 100));
+    for (let i = 0; i < validUsernames.length; i += 100) {
+      batches.push(validUsernames.slice(i, i + 100));
     }
 
     const results = {};
+    let hasError = false;
+    let lastError = null;
 
     for (const batch of batches) {
       // Twitch Helix API accepts multiple user_login params by repeating them
@@ -181,11 +234,20 @@ class TwitchAPI {
         });
       } catch (error) {
         console.error('Error checking stream status:', error);
-        // Mark all as null on error
+        hasError = true;
+        lastError = error;
+        
+        // Mark all in batch as null on error
         batch.forEach(username => {
           results[username] = null;
         });
       }
+    }
+
+    // If we had errors and it's a critical error (not just network issues), throw
+    if (hasError && lastError && 
+        (lastError.code === 'AUTH_ERROR' || lastError.code === 'RATE_LIMIT')) {
+      throw lastError;
     }
 
     return results;

@@ -311,14 +311,57 @@ header h1 {
 .save-status {
   font-size: 14px;
   min-height: 20px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  transition: all 0.3s ease;
 }
 
 .save-status.success {
   color: #0e7c0e;
+  background: rgba(14, 124, 14, 0.1);
+  border-left: 3px solid #0e7c0e;
 }
 
 .save-status.error {
   color: #e91916;
+  background: rgba(233, 25, 22, 0.1);
+  border-left: 3px solid #e91916;
+}
+
+.save-status.warning {
+  color: #ffa500;
+  background: rgba(255, 165, 0, 0.1);
+  border-left: 3px solid #ffa500;
+}
+
+.save-status.loading {
+  color: #9147ff;
+  background: rgba(145, 71, 255, 0.1);
+  border-left: 3px solid #9147ff;
+  position: relative;
+  padding-left: 32px;
+}
+
+.save-status.loading::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid #3d3d47;
+  border-top-color: #9147ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
 }
 
 .analytics-stats {
