@@ -2,8 +2,6 @@
 
 A Chrome extension that automatically swaps between Twitch streams based on priority. Auto-switches when higher priority streams go live, with category fallback and supporter features.
 
-**Repo:** `https://github.com/kaycet/twitch-stream-swapper/`
-
 ## Features
 
 ### Core Features
@@ -28,6 +26,12 @@ A Chrome extension that automatically swaps between Twitch streams based on prio
 ```bash
 git clone <repository-url>
 cd twitch-stream-swapper
+```
+
+2. Install dependencies:
+
+```bash
+npm ci
 ```
 
 2. Open Chrome and navigate to `chrome://extensions/`
@@ -121,6 +125,14 @@ twitch-stream-swapper/
 └── icons/                 # Extension icons
 ```
 
+### Local dev commands
+
+```bash
+npm run lint
+npm run test
+npm run package
+```
+
 ### Building Icons
 
 Icons are required for Chrome Web Store submission. See `ICONS.md` for generation instructions.
@@ -169,6 +181,14 @@ This extension:
 - Does not collect or transmit personal data
 - Does not track user behavior
 - See `PRIVACY.md` for full privacy policy
+
+## Token broker (Cloudflare Worker)
+
+This repo includes an optional Cloudflare Worker in `token-broker/` to keep your **Twitch Client Secret** off the extension.
+
+- **Never commit secrets**: store `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` as Cloudflare Worker secrets.
+- **Lock down origins**: set `ALLOWED_ORIGINS` to your `chrome-extension://<extension-id>` origin(s).
+- **Local development**: put local vars in `token-broker/.dev.vars` (ignored by git).
 
 ## Permissions
 

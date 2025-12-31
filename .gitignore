@@ -9,6 +9,7 @@ build/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -24,6 +25,12 @@ npm-debug.log*
 # Environment
 .env
 .env.local
+.env.*.local
+.env.*.production
+
+# Cloudflare Wrangler
+.wrangler/
+token-broker/.dev.vars
 
 # Temporary files
 *.tmp
