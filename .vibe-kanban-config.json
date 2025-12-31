@@ -1,8 +1,10 @@
 {
   "setupScript": "echo Setup complete - Chrome extension requires no build step",
-  "devServerScript": "",
+  "devServerScript": "node scripts/dev-server.js",
   "cleanupScript": "",
-  "copyFiles": [],
+  "copyFiles": [
+    "scripts"
+  ],
   "ignorePatterns": [
     "node_modules",
     ".git",
