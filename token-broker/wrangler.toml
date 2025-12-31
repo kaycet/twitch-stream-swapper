@@ -7,4 +7,12 @@ compatibility_date = "2025-12-31"
 #   { pattern = "tsr-token-broker.com/*", zone_name = "tsr-token-broker.com" }
 # ]
 
+# Recommended production vars:
+# - Put secrets in Cloudflare as Worker secrets:
+#     TWITCH_CLIENT_ID
+#     TWITCH_CLIENT_SECRET
+# - Put non-secrets as Worker variables:
+#     ALLOWED_ORIGINS = "chrome-extension://<your-extension-id>"
+# - Leave ENABLE_TOKEN_ENDPOINT unset (or not "1") so /token stays disabled in production.
+
 

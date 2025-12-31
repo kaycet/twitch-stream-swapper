@@ -15,6 +15,7 @@
  *
  * Optional environment variables:
  * - ALLOWED_ORIGINS (comma-separated), e.g. "chrome-extension://<your-extension-id>"
+ * - ENABLE_TOKEN_ENDPOINT ("1" to enable GET /token; recommended OFF in production)
  */
 
 let cachedToken = null;
@@ -38,6 +39,30 @@ function corsHeaders(request, env) {
     'Access-Control-Allow-Methods': 'GET,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
+}
+
+function isOriginAllowed(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  const allowed = (env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // If allowlist is not configured, allow (not recommended).
+  if (allowed.length === 0) return true;
+  return !!origin && allowed.includes(origin);
+}
+
+function forbiddenOriginResponse(request, env) {
+  const origin = request.headers.get('Origin') || '';
+  return new Response(JSON.stringify({
+    error: 'forbidden_origin',
+    origin,
+    hint: 'Origin must exactly match one of ALLOWED_ORIGINS. For extensions it is chrome-extension://<extension-id>.',
+  }), {
+    status: 403,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
+  });
 }
 
 async function getAppToken(env) {
@@ -115,6 +140,10 @@ export default {
 
     // Proxy Helix (recommended production path)
     if (url.pathname.startsWith('/helix/')) {
+      // Enforce allowlist for proxy traffic too, otherwise this becomes a public token-backed proxy.
+      if (!isOriginAllowed(request, env)) {
+        return forbiddenOriginResponse(request, env);
+      }
       try {
         return await proxyHelix(request, env);
       } catch (err) {
@@ -133,21 +162,17 @@ export default {
       });
     }
 
-    // Basic allowlist enforcement
-    const origin = request.headers.get('Origin') || '';
-    const allowed = (env.ALLOWED_ORIGINS || '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-    if (allowed.length > 0 && !allowed.includes(origin)) {
-      return new Response(JSON.stringify({
-        error: 'forbidden_origin',
-        origin,
-        hint: 'Origin must exactly match one of ALLOWED_ORIGINS. For extensions it is chrome-extension://<extension-id>.',
-      }), {
-        status: 403,
+    // Keep /token disabled by default; prefer /helix/* so we never expose a raw access token.
+    if (String(env.ENABLE_TOKEN_ENDPOINT || '').trim() !== '1') {
+      return new Response(JSON.stringify({ error: 'not_found' }), {
+        status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
       });
+    }
+
+    // Allowlist enforcement for /token too.
+    if (!isOriginAllowed(request, env)) {
+      return forbiddenOriginResponse(request, env);
     }
 
     try {
