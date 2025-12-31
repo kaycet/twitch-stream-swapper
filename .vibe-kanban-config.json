@@ -1,13 +1,8 @@
 {
-  "setupScript": "node scripts/setup-worktree.js || echo 'Setup complete'",
-  "devServerScript": "npm run dev",
-  "cleanupScript": "npm run format",
-  "copyFiles": [
-    "package.json",
-    "package-lock.json",
-    ".env",
-    ".env.local"
-  ],
+  "setupScript": "echo Setup complete - Chrome extension requires no build step",
+  "devServerScript": "",
+  "cleanupScript": "",
+  "copyFiles": [],
   "ignorePatterns": [
     "node_modules",
     ".git",
