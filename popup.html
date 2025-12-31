@@ -4,75 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Twitch Stream Rotator</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
-    <nav class="navbar" role="navigation">
-      <div class="navbar-brand navbar-brand-expanded">
-        <h1 class="navbar-item title is-5 navbar-title">Stream Rotator</h1>
+    <header>
+      <h1>Stream Rotator</h1>
+      <div class="header-actions">
+        <button id="helpBtn" class="icon-btn" title="Keyboard Shortcuts">?</button>
+        <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
       </div>
-      <div class="navbar-end">
-        <div class="navbar-item">
-          <button id="settingsBtn" class="button is-ghost" title="Settings">⚙️</button>
-        </div>
-      </div>
-    </nav>
+    </header>
 
     <div id="statusMessage" class="status-message"></div>
 
-    <!-- Twitch Connection Section -->
-    <div class="twitch-connection-section" id="twitchConnectionSection">
-      <div class="connection-header">
-        <div class="connection-status">
-          <span class="status-indicator" id="connectionIndicator"></span>
-          <span id="connectionStatusText">Not Connected</span>
-        </div>
-        <button id="toggleConnectionBtn" class="icon-btn" title="Toggle Connection Settings">▼</button>
-      </div>
-      
-      <div class="connection-content" id="connectionContent" style="display: none;">
-        <div class="connection-info">
-          <p class="connection-hint">
-            Connect your Twitch account to enable stream status checking. 
-            <a href="https://dev.twitch.tv/console/apps" target="_blank">Get a Client ID</a>
-          </p>
-          
-          <div class="connection-input-group" id="connectionInputGroup">
-            <input 
-              type="text" 
-              id="clientIdInput" 
-              placeholder="Enter your Twitch Client ID"
-              autocomplete="off"
-            >
-            <button id="connectBtn" class="btn btn-primary btn-small">Connect</button>
-          </div>
-          
-          <div class="connection-actions" id="connectionActions" style="display: none;">
-            <button id="disconnectBtn" class="btn btn-secondary btn-small">Disconnect</button>
-            <button id="testConnectionBtn" class="btn btn-secondary btn-small">Test Connection</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="stream-list-container">
       <div class="add-stream-section">
-        <div class="field has-addons">
-          <div class="control is-expanded">
-            <input 
-              class="input" 
-              type="text" 
-              id="streamInput" 
-              placeholder="Enter streamer username..."
-              autocomplete="off"
-            >
-          </div>
-          <div class="control">
-            <button id="addStreamBtn" class="button is-primary">Add</button>
-          </div>
-        </div>
+        <input 
+          type="text" 
+          id="streamInput" 
+          placeholder="Enter streamer username..."
+          autocomplete="off"
+        >
+        <button id="addStreamBtn" class="btn btn-primary">Add</button>
       </div>
 
       <div id="streamList" class="stream-list">
@@ -91,6 +45,35 @@
     <div class="footer">
       <div class="stream-count" id="streamCount">0 streams</div>
       <div class="premium-badge" id="premiumBadge" style="display: none;">⭐ Premium</div>
+    </div>
+  </div>
+
+  <!-- Help Tooltip -->
+  <div id="helpTooltip" class="help-tooltip" style="display: none;">
+    <div class="help-content">
+      <h3>Keyboard Shortcuts</h3>
+      <div class="shortcut-list">
+        <div class="shortcut-item">
+          <span class="shortcut-key">Enter</span>
+          <span class="shortcut-desc">Add stream (when input focused)</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">Ctrl+Enter</span>
+          <span class="shortcut-desc">Add stream</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">Delete</span>
+          <span class="shortcut-desc">Remove selected stream</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">Ctrl+,</span>
+          <span class="shortcut-desc">Open settings</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">F5</span>
+          <span class="shortcut-desc">Refresh stream status</span>
+        </div>
+      </div>
     </div>
   </div>
 

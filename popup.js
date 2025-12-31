@@ -1,6 +1,5 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
-import ErrorMessageManager from './utils/error-messages.js';
 
 class PopupManager {
   constructor() {
@@ -10,6 +9,7 @@ class PopupManager {
     this.dragOverElement = null;
     this.debounceTimeout = null;
     this.statusCheckInterval = null;
+    this.selectedStreamUsername = null;
   }
 
   async init() {
@@ -21,7 +21,6 @@ class PopupManager {
 
   async loadData() {
     try {
-      this.showLoading('loadData');
       this.streams = await storage.getStreams();
       this.settings = await storage.getSettings();
       
@@ -35,12 +34,9 @@ class PopupManager {
 
       // Apply theme
       this.applyTheme();
-      this.hideLoading();
     } catch (error) {
       console.error('Error loading data:', error);
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'loadData');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
-      this.hideLoading();
+      this.showMessage('Error loading data', 'error');
     }
   }
 
@@ -60,10 +56,63 @@ class PopupManager {
       this.addStream();
     });
 
-    // Enter key in input
-    document.getElementById('streamInput').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
+    const streamInput = document.getElementById('streamInput');
+    
+    // Enter key in input (only when input is focused)
+    streamInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
         this.addStream();
+      }
+    });
+
+    // Ctrl+Enter or Cmd+Enter for adding stream (works globally)
+    document.addEventListener('keydown', (e) => {
+      // Ctrl+Enter or Cmd+Enter - Add stream
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        // Focus input if not already focused
+        if (document.activeElement !== streamInput) {
+          streamInput.focus();
+        }
+        this.addStream();
+        return;
+      }
+
+      // Ctrl+, or Cmd+, - Open settings
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        chrome.runtime.openOptionsPage();
+        return;
+      }
+
+      // F5 - Refresh stream status
+      if (e.key === 'F5') {
+        e.preventDefault();
+        this.checkStreamStatuses();
+        this.showMessage('Refreshing stream status...', 'info');
+        return;
+      }
+
+      // Delete key - Remove selected stream
+      if (e.key === 'Delete' && this.selectedStreamUsername) {
+        e.preventDefault();
+        // Only delete if input is not focused (to avoid accidental deletions while typing)
+        if (document.activeElement !== streamInput && !streamInput.matches(':focus')) {
+          this.removeStream(this.selectedStreamUsername);
+          this.selectedStreamUsername = null;
+          this.updateSelection();
+        }
+        return;
+      }
+
+      // Arrow keys for navigation (optional enhancement)
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        // Only handle if input is not focused
+        if (document.activeElement !== streamInput && !streamInput.matches(':focus')) {
+          e.preventDefault();
+          this.navigateStreams(e.key === 'ArrowDown' ? 1 : -1);
+        }
       }
     });
 
@@ -72,41 +121,53 @@ class PopupManager {
       chrome.runtime.openOptionsPage();
     });
 
+    // Help button
+    document.getElementById('helpBtn').addEventListener('click', () => {
+      this.toggleHelpTooltip();
+    });
+
+    // Close help tooltip when clicking outside
+    document.getElementById('helpTooltip').addEventListener('click', (e) => {
+      if (e.target.id === 'helpTooltip') {
+        this.toggleHelpTooltip();
+      }
+    });
+
+    // Close help tooltip on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const helpTooltip = document.getElementById('helpTooltip');
+        if (helpTooltip.style.display !== 'none') {
+          this.toggleHelpTooltip();
+        }
+      }
+    });
+
     // Debounced input validation
     let debounceTimeout;
-    document.getElementById('streamInput').addEventListener('input', (e) => {
+    streamInput.addEventListener('input', (e) => {
       clearTimeout(debounceTimeout);
       debounceTimeout = setTimeout(() => {
         this.validateUsername(e.target.value);
       }, 300);
     });
+
+    // Clear selection when clicking on input
+    streamInput.addEventListener('focus', () => {
+      this.selectedStreamUsername = null;
+      this.updateSelection();
+    });
   }
 
   async validateUsername(username) {
-    if (!username || username.trim().length === 0) {
-      const input = document.getElementById('streamInput');
-      input.style.borderColor = '#3d3d47';
-      return;
-    }
+    if (!username || username.trim().length === 0) return;
     
-    // Basic validation - alphanumeric, underscores
-    const trimmed = username.trim();
-    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(trimmed);
+    // Basic validation - alphanumeric, underscores, hyphens
+    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
     const input = document.getElementById('streamInput');
     
-    if (!valid) {
+    if (!valid && username.trim().length > 0) {
       input.style.borderColor = '#e91916';
-      // Show helpful validation message using ErrorMessageManager
-      let errorMessage = 'Invalid username format';
-      if (trimmed.length < 4) {
-        errorMessage = 'Username must be at least 4 characters';
-      } else if (trimmed.length > 25) {
-        errorMessage = 'Username must be 25 characters or less';
-      } else if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
-        errorMessage = 'Username can only contain letters, numbers, and underscores';
-      }
-      const errorInfo = ErrorMessageManager.getErrorMessage(errorMessage, 'addStream');
-      this.showMessage(errorInfo.message, errorInfo.type);
     } else {
       input.style.borderColor = '#3d3d47';
     }
@@ -115,96 +176,70 @@ class PopupManager {
   async addStream() {
     const input = document.getElementById('streamInput');
     const username = input.value.trim().toLowerCase();
-    const addBtn = document.getElementById('addStreamBtn');
 
     if (!username) {
-      const errorInfo = ErrorMessageManager.getErrorMessage('Please enter a username', 'addStream');
-      this.showMessage(errorInfo.message, errorInfo.type);
+      this.showMessage('Please enter a username', 'error');
       return;
     }
 
     // Validate username format
     if (!/^[a-zA-Z0-9_]{4,25}$/.test(username)) {
-      const errorInfo = ErrorMessageManager.getErrorMessage('Invalid username format', 'addStream');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
-      input.style.borderColor = '#e91916';
+      this.showMessage('Invalid username format', 'error');
       return;
     }
 
     // Check if already exists
     if (this.streams.some(s => s.username.toLowerCase() === username)) {
-      const errorInfo = ErrorMessageManager.getErrorMessage('Stream already in list', 'addStream');
-      this.showMessage(errorInfo.message, errorInfo.type);
+      this.showMessage('Stream already in list', 'error');
       input.value = '';
-      input.style.borderColor = '#3d3d47';
       return;
     }
 
     // Check free tier limit
     const isPremium = this.settings?.premiumStatus || false;
     if (!isPremium && this.streams.length >= 10) {
-      const errorInfo = ErrorMessageManager.getErrorMessage('Free tier limit reached', 'addStream');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+      this.showMessage('Free tier limited to 10 streams. Upgrade for unlimited!', 'info');
+      // Still allow adding but show reminder
       setTimeout(() => {
         chrome.runtime.openOptionsPage();
       }, 2000);
       return;
     }
 
-    try {
-      // Show loading state
-      addBtn.disabled = true;
-      addBtn.textContent = 'Adding...';
-      this.showLoading('addStream');
+    // Add stream
+    const newStream = {
+      username: username,
+      priority: this.streams.length + 1,
+      addedAt: Date.now()
+    };
 
-      // Add stream
-      const newStream = {
-        username: username,
-        priority: this.streams.length + 1,
-        addedAt: Date.now()
-      };
-
-      this.streams.push(newStream);
-      await storage.saveStreams(this.streams);
-      
-      input.value = '';
-      input.style.borderColor = '#3d3d47';
-      this.render();
-      
-      const successInfo = ErrorMessageManager.getSuccessMessage('addStream', { username });
-      this.showMessage(successInfo.message, successInfo.type);
-      
-      // Check status immediately
-      this.checkStreamStatuses();
-    } catch (error) {
-      console.error('Error adding stream:', error);
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'addStream');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
-    } finally {
-      addBtn.disabled = false;
-      addBtn.textContent = 'Add';
-      this.hideLoading();
-    }
+    this.streams.push(newStream);
+    await storage.saveStreams(this.streams);
+    
+    input.value = '';
+    this.render();
+    this.showMessage(`Added ${username}`, 'success');
+    
+    // Check status immediately
+    this.checkStreamStatuses();
   }
 
   async removeStream(username) {
-    try {
-      this.streams = this.streams.filter(s => s.username !== username);
-      
-      // Reorder priorities
-      this.streams.forEach((stream, index) => {
-        stream.priority = index + 1;
-      });
-
-      await storage.saveStreams(this.streams);
-      this.render();
-      const successInfo = ErrorMessageManager.getSuccessMessage('removeStream');
-      this.showMessage(successInfo.message, successInfo.type);
-    } catch (error) {
-      console.error('Error removing stream:', error);
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'removeStream');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    this.streams = this.streams.filter(s => s.username !== username);
+    
+    // Clear selection if removed stream was selected
+    if (this.selectedStreamUsername === username) {
+      this.selectedStreamUsername = null;
     }
+    
+    // Reorder priorities
+    this.streams.forEach((stream, index) => {
+      stream.priority = index + 1;
+    });
+
+    await storage.saveStreams(this.streams);
+    this.render();
+    this.showMessage('Stream removed', 'success');
   }
 
   render() {
@@ -241,6 +276,9 @@ class PopupManager {
 
     // Setup drag and drop
     this.setupDragAndDrop();
+    
+    // Update selection display
+    this.updateSelection();
   }
 
   createStreamItem(stream, index) {
@@ -249,6 +287,11 @@ class PopupManager {
     item.draggable = true;
     item.dataset.username = stream.username;
     item.dataset.priority = stream.priority;
+
+    // Add selected class if this is the selected stream
+    if (this.selectedStreamUsername === stream.username) {
+      item.classList.add('selected');
+    }
 
     const isLive = stream.isLive || false;
 
@@ -266,6 +309,16 @@ class PopupManager {
       </div>
     `;
 
+    // Click to select
+    item.addEventListener('click', (e) => {
+      // Don't select if clicking on remove button
+      if (e.target.closest('[data-action="remove"]')) {
+        return;
+      }
+      this.selectedStreamUsername = stream.username;
+      this.updateSelection();
+    });
+
     // Remove button
     item.querySelector('[data-action="remove"]').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -273,6 +326,51 @@ class PopupManager {
     });
 
     return item;
+  }
+
+  updateSelection() {
+    const items = document.querySelectorAll('.stream-item');
+    items.forEach(item => {
+      if (item.dataset.username === this.selectedStreamUsername) {
+        item.classList.add('selected');
+      } else {
+        item.classList.remove('selected');
+      }
+    });
+  }
+
+  navigateStreams(direction) {
+    if (this.streams.length === 0) return;
+
+    let currentIndex = -1;
+    if (this.selectedStreamUsername) {
+      currentIndex = this.streams.findIndex(s => s.username === this.selectedStreamUsername);
+    }
+
+    let newIndex;
+    if (currentIndex === -1) {
+      // No selection, start at first or last
+      newIndex = direction > 0 ? 0 : this.streams.length - 1;
+    } else {
+      newIndex = currentIndex + direction;
+      if (newIndex < 0) newIndex = this.streams.length - 1;
+      if (newIndex >= this.streams.length) newIndex = 0;
+    }
+
+    this.selectedStreamUsername = this.streams[newIndex].username;
+    this.updateSelection();
+
+    // Scroll into view
+    const selectedItem = document.querySelector(`[data-username="${this.selectedStreamUsername}"]`);
+    if (selectedItem) {
+      selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  toggleHelpTooltip() {
+    const helpTooltip = document.getElementById('helpTooltip');
+    const isVisible = helpTooltip.style.display === 'flex';
+    helpTooltip.style.display = isVisible ? 'none' : 'flex';
   }
 
   setupDragAndDrop() {
@@ -330,36 +428,23 @@ class PopupManager {
 
     if (draggedIndex === -1 || targetIndex === -1) return;
 
-    try {
-      // Remove dragged item
-      const [dragged] = this.streams.splice(draggedIndex, 1);
-      
-      // Insert at target position
-      this.streams.splice(targetIndex, 0, dragged);
+    // Remove dragged item
+    const [dragged] = this.streams.splice(draggedIndex, 1);
+    
+    // Insert at target position
+    this.streams.splice(targetIndex, 0, dragged);
 
-      // Update priorities
-      this.streams.forEach((stream, index) => {
-        stream.priority = index + 1;
-      });
+    // Update priorities
+    this.streams.forEach((stream, index) => {
+      stream.priority = index + 1;
+    });
 
-      // Debounced save
-      clearTimeout(this.debounceTimeout);
-      this.debounceTimeout = setTimeout(async () => {
-        try {
-          await storage.saveStreams(this.streams);
-          this.render();
-          // Don't show success message for reordering - it's too frequent
-        } catch (error) {
-          console.error('Error saving reordered streams:', error);
-          const errorInfo = ErrorMessageManager.getErrorMessage(error, 'reorderStreams');
-          this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
-        }
-      }, 300);
-    } catch (error) {
-      console.error('Error reordering streams:', error);
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'reorderStreams');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
-    }
+    // Debounced save
+    clearTimeout(this.debounceTimeout);
+    this.debounceTimeout = setTimeout(async () => {
+      await storage.saveStreams(this.streams);
+      this.render();
+    }, 300);
   }
 
   async checkStreamStatuses() {
@@ -373,8 +458,6 @@ class PopupManager {
         await twitchAPI.initialize(this.settings.clientId);
       } catch (error) {
         console.error('Failed to initialize Twitch API:', error);
-        const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
-        this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
         return;
       }
     }
@@ -408,8 +491,9 @@ class PopupManager {
       this.updateCurrentStream();
     } catch (error) {
       console.error('Error checking stream statuses:', error);
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
-      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+      if (error.message.includes('Client ID')) {
+        this.showMessage('Please configure Twitch Client ID in settings', 'error');
+      }
     }
   }
 
@@ -444,25 +528,9 @@ class PopupManager {
     messageDiv.textContent = text;
     messageDiv.className = `status-message show ${type}`;
 
-    // Show longer for error messages with actions
-    const duration = type === 'error' ? 5000 : 3000;
     setTimeout(() => {
       messageDiv.classList.remove('show');
-    }, duration);
-  }
-
-  showLoading(context) {
-    const messageDiv = document.getElementById('statusMessage');
-    const loadingText = ErrorMessageManager.getLoadingMessage(context);
-    messageDiv.textContent = loadingText;
-    messageDiv.className = 'status-message show loading';
-  }
-
-  hideLoading() {
-    const messageDiv = document.getElementById('statusMessage');
-    if (messageDiv.classList.contains('loading')) {
-      messageDiv.classList.remove('show', 'loading');
-    }
+    }, 3000);
   }
 
   cleanup() {
