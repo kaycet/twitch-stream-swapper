@@ -78,12 +78,12 @@ Supporter features include:
 - Analytics dashboard
 - Unlimited stream slots
 
-## GitLab CI + Releases (Chrome Web Store friendly)
+## GitHub Actions + Releases (Chrome Web Store friendly)
 
-This repo includes a GitLab pipeline that runs:
+This repo includes GitHub Actions workflows that run:
 - **Lint** (`npm run lint`)
 - **Tests** (`npm run test`)
-- **Package** (`npm run package`) → produces a Web Store–ready ZIP as a pipeline artifact
+- **Package** (`npm run package`) → produces a Web Store–ready ZIP and attaches it to a GitHub Release on tags
 
 ### Release process (recommended)
 
@@ -96,10 +96,10 @@ git tag v1.0.1
 git push origin v1.0.1
 ```
 
-4. GitLab CI will:
+4. GitHub Actions will:
    - run lint + tests
    - build `dist/twitch-stream-swapper-<version>.zip`
-   - create a **GitLab Release** on the tag with an **Assets link** to download the ZIP
+   - create a **GitHub Release** and upload the ZIP as a release asset
 
 5. Upload that ZIP to the Chrome Web Store.
 

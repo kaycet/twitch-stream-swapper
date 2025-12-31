@@ -1,0 +1,42 @@
+name: Release (Package ZIP)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Package extension ZIP
+        run: npm run package
+
+      - name: Create GitHub Release + upload ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+
+
