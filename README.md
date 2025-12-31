@@ -30,7 +30,7 @@
 
 ## Install
 
-- **Chrome Web Store**: coming soon. Publishing checklist: `CHROME_STORE.md`.
+- **Chrome Web Store**: coming soon. Publishing checklist: `docs/CHROME_STORE.md`.
 - **From source (developer mode)**:
 
 ```bash
@@ -51,14 +51,15 @@ npm ci
 
 - Stores your stream list and settings locally in Chrome storage
 - Does not sell personal data
-- See `PRIVACY.md`
+- See `docs/PRIVACY.md`
 
 ## For maintainers
 
 - **Package ZIP**: `npm run package` (outputs to `dist/`)
 - **Releases**: tag `vX.Y.Z` → GitHub Actions builds and uploads the ZIP to a GitHub Release
 - **Token broker (recommended for production)**: `token-broker/`
-  - Deployment/security notes: `token-broker/SECURITY.md`
+  - Deployment/security notes: `docs/token-broker/SECURITY.md`
+ - **Manual QA checklist**: `docs/TESTING.md`
 
 ## Contributing
 
