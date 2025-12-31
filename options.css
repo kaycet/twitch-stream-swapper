@@ -1,3 +1,10 @@
+/* Override Bulma defaults for dark theme */
+:root {
+  --purple-accent: #9147ff;
+  --purple-accent-hover: #772ce8;
+}
+
+/* Reset and base styles - work alongside Bulma */
 * {
   margin: 0;
   padding: 0;
@@ -6,9 +13,44 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background: #0e0e10;
-  color: #efeff1;
+  background: #0e0e10 !important;
+  color: #efeff1 !important;
   line-height: 1.6;
+}
+
+/* Override Bulma's default colors */
+.button.is-primary {
+  background-color: var(--purple-accent) !important;
+  border-color: var(--purple-accent) !important;
+}
+
+.button.is-primary:hover {
+  background-color: var(--purple-accent-hover) !important;
+  border-color: var(--purple-accent-hover) !important;
+}
+
+.input, .textarea, .select select {
+  background-color: #2d2d35 !important;
+  border-color: #3d3d47 !important;
+  color: #efeff1 !important;
+}
+
+.input:focus, .textarea:focus, .select select:focus {
+  border-color: var(--purple-accent) !important;
+  box-shadow: 0 0 0 0.125em rgba(145, 71, 255, 0.25) !important;
+}
+
+.input::placeholder, .textarea::placeholder {
+  color: #5c5c66 !important;
+}
+
+/* Override Bulma link colors */
+a {
+  color: var(--purple-accent) !important;
+}
+
+a:hover {
+  color: var(--purple-accent-hover) !important;
 }
 
 .container {
@@ -33,14 +75,14 @@ header h1 {
 }
 
 .back-link {
-  color: #9147ff;
+  color: var(--purple-accent) !important;
   text-decoration: none;
   font-size: 14px;
   transition: color 0.2s;
 }
 
 .back-link:hover {
-  color: #772ce8;
+  color: var(--purple-accent-hover) !important;
 }
 
 .content {
@@ -105,12 +147,13 @@ header h1 {
 }
 
 .hint a {
-  color: #9147ff;
+  color: var(--purple-accent) !important;
   text-decoration: none;
 }
 
 .hint a:hover {
   text-decoration: underline;
+  color: var(--purple-accent-hover) !important;
 }
 
 .setting-item input[type="text"],
@@ -130,7 +173,7 @@ header h1 {
 
 .setting-item input:focus,
 .setting-item select:focus {
-  border-color: #9147ff;
+  border-color: var(--purple-accent) !important;
 }
 
 .setting-item input::placeholder {
@@ -145,7 +188,7 @@ header h1 {
 }
 
 .premium-section {
-  border-color: #9147ff;
+  border-color: var(--purple-accent) !important;
   background: linear-gradient(135deg, #18181b 0%, #1a1525 100%);
 }
 
@@ -169,7 +212,7 @@ header h1 {
 
 .premium-reminder {
   background: #2d1a3d;
-  border: 1px solid #9147ff;
+  border: 1px solid var(--purple-accent) !important;
   border-radius: 4px;
   padding: 12px;
   margin-top: 16px;
@@ -207,12 +250,12 @@ header h1 {
 }
 
 .btn-primary {
-  background: #9147ff;
-  color: #fff;
+  background: var(--purple-accent) !important;
+  color: #fff !important;
 }
 
 .btn-primary:hover {
-  background: #772ce8;
+  background: var(--purple-accent-hover) !important;
 }
 
 .btn-secondary {
@@ -303,7 +346,7 @@ header h1 {
   display: block;
   font-size: 24px;
   font-weight: 600;
-  color: #9147ff;
+  color: var(--purple-accent) !important;
 }
 
 .viewing-time {
@@ -338,7 +381,7 @@ header h1 {
 }
 
 .viewing-time-duration {
-  color: #9147ff;
+  color: var(--purple-accent) !important;
   font-weight: 600;
 }
 

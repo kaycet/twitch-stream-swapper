@@ -21,7 +21,7 @@ header {
 
 .stream-item:hover {
   background: #222222;
-  border-color: #9147ff;
+  border-color: var(--purple-accent, #9147ff);
 }
 
 #streamInput {
