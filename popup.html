@@ -11,7 +11,7 @@
     <header>
       <h1>Stream Swapper</h1>
       <div class="header-actions">
-        <button id="helpBtn" class="icon-btn" title="Keyboard Shortcuts">?</button>
+        <button id="helpBtn" class="icon-btn" title="How to use">?</button>
         <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
       </div>
     </header>
@@ -99,27 +99,31 @@
   <!-- Help Tooltip -->
   <div id="helpTooltip" class="help-tooltip" style="display: none;">
     <div class="help-content">
-      <h3>Keyboard Shortcuts</h3>
-      <div class="shortcut-list">
-        <div class="shortcut-item">
-          <span class="shortcut-key">Enter</span>
-          <span class="shortcut-desc">Add stream (when input focused)</span>
+      <h3>How to use</h3>
+      <div class="help-list">
+        <div class="help-item">
+          <span class="help-pill">1</span>
+          <span class="help-desc"><strong>Add streamers</strong>: type a username → click <strong>Add</strong>. Drag items to reorder priority.</span>
         </div>
-        <div class="shortcut-item">
-          <span class="shortcut-key">Ctrl+Enter</span>
-          <span class="shortcut-desc">Add stream</span>
+        <div class="help-item">
+          <span class="help-pill">2</span>
+          <span class="help-desc"><strong>Enable Auto‑Swap</strong>: toggle it ON. If no Twitch tab exists, we’ll open one and manage only that tab.</span>
         </div>
-        <div class="shortcut-item">
-          <span class="shortcut-key">Delete</span>
-          <span class="shortcut-desc">Remove selected stream</span>
+        <div class="help-item">
+          <span class="help-pill">↩</span>
+          <span class="help-desc"><strong>Jump back</strong>: use the ↩ button to focus the managed Twitch tab.</span>
         </div>
-        <div class="shortcut-item">
-          <span class="shortcut-key">Ctrl+,</span>
-          <span class="shortcut-desc">Open settings</span>
+        <div class="help-item">
+          <span class="help-pill">🎲</span>
+          <span class="help-desc"><strong>Category fallback</strong>: toggle it on, type a category, then click ✓ to apply.</span>
         </div>
-        <div class="shortcut-item">
-          <span class="shortcut-key">F5</span>
-          <span class="shortcut-desc">Refresh stream status</span>
+        <div class="help-item">
+          <span class="help-pill">⚙️</span>
+          <span class="help-desc"><strong>More settings</strong>: open Options for interval, themes, supporter features, and advanced config.</span>
+        </div>
+        <div class="help-item">
+          <span class="help-pill">Tip</span>
+          <span class="help-desc">If you close the managed Twitch tab, Auto‑Swap turns off automatically.</span>
         </div>
       </div>
     </div>

@@ -650,14 +650,14 @@ header h1 {
   justify-content: space-between;
 }
 
-.shortcut-list {
+.help-list {
   display: grid;
   gap: 8px;
 }
 
-.shortcut-item {
+.help-item {
   display: grid;
-  grid-template-columns: 86px 1fr;
+  grid-template-columns: 44px 1fr;
   gap: 10px;
   align-items: center;
   padding: 8px 10px;
@@ -666,7 +666,7 @@ header h1 {
   background: rgba(0,0,0,0.10);
 }
 
-.shortcut-key {
+.help-pill {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   color: var(--text);
@@ -677,10 +677,15 @@ header h1 {
   text-align: center;
 }
 
-.shortcut-desc {
+.help-desc {
   font-size: 12px;
   color: var(--muted);
   line-height: 1.2;
+}
+
+.help-desc strong {
+  color: var(--text);
+  font-weight: 700;
 }
 
 /* Smooth transitions for drag states */
