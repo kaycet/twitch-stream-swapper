@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#9147ff"/>
+  
+  <!-- Rotating circular arrow -->
+  <g fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Circular arrow path (270 degrees) -->
+    <path d="M 32 8 A 20 20 0 1 1 32 56" opacity="0.95"/>
+    <!-- Arrow head -->
+    <path d="M 28 8 L 32 4 L 36 8" fill="white" stroke="none"/>
+  </g>
+  
+  <!-- Play button (center) -->
+  <polygon points="26,20 26,44 42,32" fill="white"/>
+</svg>

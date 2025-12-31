@@ -1,5 +1,21 @@
 # Icon Generation Guide
 
+## Icon Source
+
+The master icon source file is located at `icons/icon-source.svg`. This SVG file contains the vector graphics design that should be used to generate all PNG icon sizes. The design features:
+- Purple (#9147ff) background circle representing Twitch branding
+- White play button in the center (streaming symbol)
+- Rotating circular arrow around the play button (rotation symbol)
+- Optimized for scalability from 16px to 512px
+
+To generate PNG icons from the SVG source, you can use tools like:
+- [Inkscape](https://inkscape.org/) (command-line: `inkscape --export-filename=icon-16.png --export-width=16 --export-height=16 icon-source.svg`)
+- [ImageMagick](https://imagemagick.org) (with rsvg or inkscape delegate)
+- Online SVG to PNG converters
+- Design tools like Figma or Adobe Illustrator
+
+## Required PNG Icons
+
 The extension requires PNG icons in the following sizes:
 - 16x16 pixels (icon-16.png)
 - 48x48 pixels (icon-48.png)
