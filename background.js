@@ -7,6 +7,7 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
+import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 
 function isTwitchUrl(url) {
   try {
@@ -53,6 +54,15 @@ class BackgroundWorker {
     this.settings = null;
     this.snoozeUntil = 0;
     this._initPromise = null;
+    this.runtime = {
+      fallback: {
+        active: false,
+        category: null,
+        username: null,
+        updatedAt: 0,
+        reason: null,
+      },
+    };
   }
 
   async init() {
@@ -61,6 +71,19 @@ class BackgroundWorker {
     this._initPromise = (async () => {
     // Load settings
     this.settings = await storage.getSettings();
+
+    // Load runtime state (non-critical, used for UX + avoiding constant fallback rerolls)
+    const persistedRuntime = await storage.get('runtime');
+    if (persistedRuntime && typeof persistedRuntime === 'object') {
+      this.runtime = {
+        ...this.runtime,
+        ...persistedRuntime,
+        fallback: {
+          ...this.runtime.fallback,
+          ...(persistedRuntime.fallback || {}),
+        },
+      };
+    }
     
     // Initialize Twitch API
     if (this.settings.clientId) {
@@ -112,6 +135,11 @@ class BackgroundWorker {
 
   async handleSettingsChange(newSettings) {
     this.settings = newSettings;
+
+    // If Auto-Swap was turned off, clear fallback runtime (prevents stale "fallback mode" state).
+    if (!this.settings?.redirectEnabled) {
+      await this.setFallbackRuntime({ active: false });
+    }
     
     // Reinitialize API if client ID changed
     if (newSettings.clientId) {
@@ -272,6 +300,11 @@ class BackgroundWorker {
         });
       }
 
+      // If any list stream is live, we are not in category fallback mode anymore.
+      if (highestPriorityLive) {
+        await this.setFallbackRuntime({ active: false });
+      }
+
       // Badge: indicate enabled + whether the current highest priority is live
       this.updateBadge({
         enabled: !!this.settings?.redirectEnabled,
@@ -299,7 +332,7 @@ class BackgroundWorker {
 
       // Handle category fallback if no streams are live
       if (!highestPriorityLive && this.settings?.fallbackCategory) {
-        await this.handleCategoryFallback();
+        await this.handleCategoryFallback({ force: false, reason: 'auto' });
       }
 
       // Update analytics (premium feature)
@@ -478,31 +511,87 @@ class BackgroundWorker {
     });
   }
 
-  async handleCategoryFallback() {
-    // Only use fallback if no streams in list are live
-    // and user has configured a fallback category
-    
-    if (!this.settings?.fallbackCategory) {
-      return;
-    }
+  async handleCategoryFallback({ force = false, reason = 'auto' } = {}) {
+    return this._handleCategoryFallbackInternal({ force, reason });
+  }
+
+  async _handleCategoryFallbackInternal({ force, reason }) {
+    if (!this.settings?.fallbackCategory) return false;
 
     const managedTabId = this.settings?.managedTwitchTabId;
-    if (!managedTabId) return;
+    if (!managedTabId) return false;
 
-    chrome.tabs.get(managedTabId, async (tab) => {
-      if (chrome.runtime.lastError || !tab) return;
-      if (!isTwitchUrl(tab.url || '')) return; // Only use fallback if the managed tab is a Twitch tab
-
-      try {
-        const randomStream = await twitchAPI.getRandomStreamFromCategory(this.settings.fallbackCategory);
-        if (randomStream) {
-          const streamUrl = `https://www.twitch.tv/${randomStream.user_login}`;
-          chrome.tabs.update(managedTabId, { url: streamUrl });
-        }
-      } catch (error) {
-        console.error('Error getting fallback stream:', error);
-      }
+    const tab = await new Promise((resolve) => {
+      chrome.tabs.get(managedTabId, (t) => {
+        if (chrome.runtime.lastError || !t) return resolve(null);
+        return resolve(t);
+      });
     });
+
+    if (!tab) return false;
+    if (!isTwitchUrl(tab.url || '')) return false; // Only use fallback if the managed tab is a Twitch tab
+
+    const currentChannel = getChannelFromTwitchUrl(tab.url || '');
+    const isFallbackActive = !!this.runtime?.fallback?.active;
+
+    const shouldReroll = shouldRerollCategoryFallback({
+      force,
+      isFallbackActive,
+      currentChannel,
+      runtimeCategory: this.runtime?.fallback?.category ?? null,
+      settingsCategory: this.settings?.fallbackCategory ?? null,
+    });
+
+    if (!shouldReroll) {
+      // Keep runtime state in sync (in case we restarted and lost in-memory values).
+      await this.setFallbackRuntime({
+        active: true,
+        category: this.settings.fallbackCategory,
+        username: currentChannel || (this.runtime?.fallback?.username ?? null),
+        reason: this.runtime?.fallback?.reason ?? 'auto',
+      });
+      return false;
+    }
+
+    try {
+      const randomStream = await twitchAPI.getRandomStreamFromCategory(this.settings.fallbackCategory);
+      if (!randomStream?.user_login) return false;
+
+      const username = String(randomStream.user_login).toLowerCase();
+      const streamUrl = `https://www.twitch.tv/${username}`;
+
+      await this.setFallbackRuntime({
+        active: true,
+        category: this.settings.fallbackCategory,
+        username,
+        reason,
+      });
+
+      await new Promise((resolve) => {
+        chrome.tabs.update(managedTabId, { url: streamUrl }, () => resolve(true));
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error getting fallback stream:', error);
+      return false;
+    }
+  }
+
+  async setFallbackRuntime({ active, category, username, reason } = {}) {
+    const next = {
+      ...this.runtime,
+      fallback: {
+        ...this.runtime.fallback,
+        ...(typeof active === 'boolean' ? { active } : {}),
+        ...(category !== undefined ? { category } : {}),
+        ...(username !== undefined ? { username } : {}),
+        ...(reason !== undefined ? { reason } : {}),
+        updatedAt: Date.now(),
+      },
+    };
+    this.runtime = next;
+    await storage.set({ runtime: next }, true);
   }
 
   async updateAnalytics(liveStream) {
@@ -547,6 +636,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'TSR_FORCE_POLL') {
     worker.forcePollNow()
       .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
+    return true;
+  }
+  if (message?.type === 'TSR_FALLBACK_REROLL') {
+    worker.init()
+      .then(() => worker.handleCategoryFallback({ force: true, reason: 'manual' }))
+      .then((didRedirect) => sendResponse({ ok: true, didRedirect: !!didRedirect }))
       .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
     return true;
   }

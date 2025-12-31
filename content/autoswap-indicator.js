@@ -34,6 +34,14 @@ function ensureStyles() {
       background: #00dc82;
       box-shadow: 0 0 0 4px rgba(0, 220, 130, 0.15);
     }
+    #${INDICATOR_ID}[data-mode="fallback"] {
+      border-color: rgba(145, 71, 255, 0.6);
+      color: #f3ecff;
+    }
+    #${INDICATOR_ID}[data-mode="fallback"] .dot {
+      background: #9147ff;
+      box-shadow: 0 0 0 4px rgba(145, 71, 255, 0.18);
+    }
     #${INDICATOR_ID} .title {
       font-weight: 700;
       font-size: 12px;
@@ -47,6 +55,24 @@ function ensureStyles() {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    #${INDICATOR_ID} .btn {
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: inherit;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #${INDICATOR_ID}[data-mode="fallback"] .btn {
+      border-color: rgba(145, 71, 255, 0.6);
+      background: rgba(145, 71, 255, 0.18);
+    }
+    #${INDICATOR_ID} .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
   `;
   document.documentElement.appendChild(style);
@@ -62,6 +88,7 @@ function ensureIndicator() {
     <span class="dot"></span>
     <span class="title">Auto-Swap ON</span>
     <span class="target" id="tsr-autoswap-target"></span>
+    <button class="btn" id="tsr-fallback-reroll" style="display:none;" title="Pick a new random stream from the fallback category">New random</button>
   `;
   document.documentElement.appendChild(el);
   return el;
@@ -77,10 +104,14 @@ function pickTargetStream(streams) {
 async function refresh() {
   const el = ensureIndicator();
   const targetEl = document.getElementById('tsr-autoswap-target');
+  const titleEl = el.querySelector('.title');
+  const rerollBtn = document.getElementById('tsr-fallback-reroll');
 
-  const { settings, streams } = await chrome.storage.local.get(['settings', 'streams']);
+  const { settings, streams, runtime } = await chrome.storage.local.get(['settings', 'streams', 'runtime']);
   const enabled = !!settings?.redirectEnabled;
   const managedTabId = settings?.managedTwitchTabId ?? null;
+  const fallbackActive = !!runtime?.fallback?.active;
+  const fallbackCategory = runtime?.fallback?.category || settings?.fallbackCategory || '';
 
   // Only show on the managed tab (so other Twitch tabs stay "normal")
   let myTabId = null;
@@ -96,6 +127,17 @@ async function refresh() {
     return;
   }
 
+  // Mode styling + fallback reroll button
+  if (fallbackActive) {
+    el.dataset.mode = 'fallback';
+    if (titleEl) titleEl.textContent = 'Category Fallback';
+    if (rerollBtn) rerollBtn.style.display = 'inline-flex';
+  } else {
+    el.dataset.mode = 'normal';
+    if (titleEl) titleEl.textContent = 'Auto-Swap ON';
+    if (rerollBtn) rerollBtn.style.display = 'none';
+  }
+
   const target = pickTargetStream(streams);
   if (targetEl) {
     if (!target?.username) {
@@ -106,6 +148,28 @@ async function refresh() {
       targetEl.textContent = `Target (waiting): ${target.username}`;
     }
   }
+
+  if (fallbackActive && targetEl && fallbackCategory) {
+    // Append a short hint without getting too verbose.
+    targetEl.textContent = `${targetEl.textContent} — 🎲 ${fallbackCategory}`;
+  }
+
+  if (rerollBtn && !rerollBtn.dataset.bound) {
+    rerollBtn.dataset.bound = '1';
+    rerollBtn.addEventListener('click', async () => {
+      rerollBtn.disabled = true;
+      try {
+        await chrome.runtime.sendMessage({ type: 'TSR_FALLBACK_REROLL' });
+      } catch {
+        // Non-fatal; user can click again.
+      } finally {
+        setTimeout(() => {
+          rerollBtn.disabled = false;
+        }, 1200);
+      }
+    });
+  }
+
   el.style.display = 'flex';
 }
 
