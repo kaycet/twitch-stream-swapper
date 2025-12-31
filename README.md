@@ -83,6 +83,25 @@ Support the developer to unlock premium features:
 
 ## Development
 
+### Setup
+
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Start development server (for Vibe Kanban Web Companion):
+```bash
+npm run dev
+```
+
+The development server will start and you can access the Vibe Kanban Web Companion at `http://localhost:5173/dev.html` (or the port shown in the terminal).
+
+3. Build for production:
+```bash
+npm run build
+```
+
 ### Project Structure
 
 ```
@@ -91,6 +110,9 @@ twitch-stream-rotator/
 ├── popup.html/js/css      # Main popup UI
 ├── options.html/js/css    # Settings page
 ├── background.js          # Service worker (polling logic)
+├── dev.html               # Development page with Vibe Kanban Web Companion
+├── src/
+│   └── main.jsx           # React entry point for dev page
 ├── utils/
 │   ├── twitch-api.js      # Twitch API wrapper
 │   ├── storage.js         # Storage utilities
@@ -98,6 +120,15 @@ twitch-stream-rotator/
 ├── themes/                # Premium themes
 └── icons/                 # Extension icons
 ```
+
+### Vibe Kanban Web Companion
+
+The project includes [Vibe Kanban Web Companion](https://github.com/BloopAI/vibe-kanban-web-companion) for enhanced development experience. The companion component is integrated in the development page (`dev.html`) and only renders in development mode.
+
+To use it:
+1. Run `npm run dev`
+2. Open `http://localhost:5173/dev.html` in your browser
+3. The Vibe Kanban Web Companion will be available for point-and-click editing when used with Vibe Kanban
 
 ### Building Icons
 
