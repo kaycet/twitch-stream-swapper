@@ -1,6 +1,6 @@
 {
   "setupScript": "echo Setup complete - Chrome extension requires no build step",
-  "devServerScript": "node dev-server-standalone.js",
+  "devServerScript": "",
   "cleanupScript": "",
   "copyFiles": [
     "dev-server-standalone.js"
