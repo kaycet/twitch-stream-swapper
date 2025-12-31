@@ -138,8 +138,9 @@ class PopupManager {
     this.render();
     this.showMessage(`Added ${username}`, 'success');
     
-    // Check status immediately
-    this.checkStreamStatuses();
+    // Check status immediately and re-render after status check completes
+    await this.checkStreamStatuses();
+    this.render();
   }
 
   async removeStream(username) {
@@ -326,16 +327,18 @@ class PopupManager {
         const wasLive = stream.isLive || false;
         const isLive = statuses[stream.username] !== null;
         
+        // Always update stream data to ensure new streams get their status
+        stream.isLive = isLive;
+        stream.streamData = statuses[stream.username];
+        
+        // Track if status actually changed for render optimization
         if (wasLive !== isLive) {
-          stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
           hasChanges = true;
         }
       });
 
-      if (hasChanges) {
-        this.render();
-      }
+      // Always render after status check to ensure UI is up to date
+      this.render();
 
       // Update current stream display
       this.updateCurrentStream();
