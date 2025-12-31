@@ -1,0 +1,18 @@
+{
+  "setupScript": "node scripts/setup-worktree.js || echo 'Setup complete'",
+  "devServerScript": "npm run dev",
+  "cleanupScript": "npm run format",
+  "copyFiles": [
+    "package.json",
+    "package-lock.json",
+    ".env",
+    ".env.local"
+  ],
+  "ignorePatterns": [
+    "node_modules",
+    ".git",
+    "dist",
+    "*.log"
+  ]
+}
+

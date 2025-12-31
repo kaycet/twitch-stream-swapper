@@ -4,17 +4,16 @@
   "description": "Automatically rotate between Twitch streams based on priority",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "setup": "node scripts/setup-worktree.js || echo 'Setup complete'",
+    "dev": "npx http-server . -p 8080 -o dev.html --cors",
+    "test": "echo 'Run manual tests per TESTING.md'",
+    "format": "echo 'Formatting not configured - use your IDE formatter'",
+    "lint": "echo 'Linting not configured - add ESLint if needed'",
+    "validate": "node scripts/validate-extension.js",
+    "generate-icons": "node scripts/generate-icons.js"
   },
-  "dependencies": {
-    "vibe-kanban-web-companion": "^0.0.5",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.1",
-    "vite": "^5.0.0"
+    "http-server": "^14.1.1"
   }
 }
