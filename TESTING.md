@@ -1,6 +1,6 @@
-# Testing Guide - Twitch Stream Rotator
+# Testing Guide - Twitch Stream Swapper
 
-This document provides comprehensive manual testing instructions for the Twitch Stream Rotator Chrome extension. Use this checklist during QA to verify all features work correctly.
+This document provides comprehensive manual testing instructions for the Twitch Stream Swapper Chrome extension. Use this checklist during QA to verify all features work correctly.
 
 ## Table of Contents
 
@@ -152,7 +152,7 @@ Before starting testing, ensure you have:
 2. Try to add an 11th stream
 
 **Expected Results:**
-- [ ] Info message: "Free tier limited to 10 streams. Upgrade for unlimited!"
+- [ ] Info message: "Free tier limited to 10 streams. Enable Supporter Features for unlimited (honor system)."
 - [ ] Stream is NOT added
 - [ ] Options page opens automatically after 2 seconds
 - [ ] Stream count shows "10 streams"
@@ -488,37 +488,37 @@ Before starting testing, ensure you have:
 
 ---
 
-## Premium Features Testing
+## Supporter Features Testing (Honor system)
 
-### Test Case 6.1: Premium Activation
+### Test Case 6.1: Enable Supporter Features
 
 **Steps:**
 1. Open options page
 2. Scroll to "Support the Developer" section
-3. Enter an activation code (any code > 5 characters, e.g., "PREMIUM2024")
-4. Click "Activate" button
+3. Toggle "Enable Supporter Features"
+4. Confirm the prompt
 
 **Expected Results:**
-- [ ] Success message: "Premium activated! Thank you for your support! 🎉"
-- [ ] "Premium Status" checkbox becomes checked
-- [ ] Premium badge appears in popup
-- [ ] Premium features become enabled
+- [ ] "Enable Supporter Features" remains enabled
+- [ ] Supporter features become enabled
 
 **Verification:**
-- Check popup for premium badge (⭐ Premium)
-- Verify premium features are accessible
+- Verify supporter features are accessible:
+  - Desktop notifications
+  - Themes
+  - Analytics
+  - Unlimited streams
 
 **Negative Test:**
-- [ ] Enter short code (< 5 characters)
-- [ ] Verify error: "Invalid activation code"
-- [ ] Premium status remains unchecked
+- [ ] Toggle "Enable Supporter Features", then cancel the confirmation prompt
+- [ ] Verify supporter features remain disabled
 
 ---
 
-### Test Case 6.2: Desktop Notifications (Premium)
+### Test Case 6.2: Desktop Notifications (Supporter)
 
 **Prerequisites:**
-- Premium status activated
+- Supporter features enabled
 - Notifications enabled in settings
 
 **Steps:**
@@ -541,10 +541,10 @@ Before starting testing, ensure you have:
 
 ---
 
-### Test Case 6.3: Custom Themes (Premium)
+### Test Case 6.3: Custom Themes (Supporter)
 
 **Steps:**
-1. Activate premium
+1. Enable supporter features
 2. Open options page
 3. Select a theme (e.g., "Dark" or "Neon")
 4. Save settings
@@ -636,7 +636,7 @@ Before starting testing, ensure you have:
 ### Test Case 6.7: Premium Features Disabled for Free Users
 
 **Steps:**
-1. Without premium activation
+1. Without supporter features enabled
 2. Try to enable notifications
 3. Try to select non-default theme
 4. Check analytics section
@@ -817,7 +817,7 @@ Before starting testing, ensure you have:
 3. Try to check stream status
 
 **Expected Results:**
-- [ ] Error message: "Please configure Twitch Client ID in settings"
+- [ ] Error message is user-friendly (does not ask end users to configure Twitch credentials)
 - [ ] Streams can still be added (but status won't update)
 - [ ] No crashes
 - [ ] User is directed to settings

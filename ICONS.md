@@ -6,54 +6,30 @@ The extension requires PNG icons in the following sizes:
 - 128x128 pixels (icon-128.png)
 - 512x512 pixels (icon-512.png)
 
-## Automated Generation (Recommended)
+## Automated Generation (Recommended — no dependencies)
 
-The easiest way to generate all required icon sizes is using the included Node.js script.
+This repo does **not** require Node/npm to run the extension, so icon generation is done with a small, dependency-free HTML tool.
 
-### Prerequisites
+### Using the icon generator
 
-1. **Install Node.js** (if not already installed):
-   - Download from [nodejs.org](https://nodejs.org/)
-   - Or use a package manager:
-     ```bash
-     # macOS (Homebrew)
-     brew install node
-     
-     # Ubuntu/Debian
-     sudo apt-get install nodejs npm
-     
-     # Windows
-     # Download installer from nodejs.org
-     ```
-
-2. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-   This will install `sharp`, the image processing library used by the script.
-
-### Using the Generation Script
-
-1. **Create your SVG source file**:
-   - Create `icons/icon-source.svg` with your icon design
-   - The SVG should be square (recommended: 512x512 viewBox)
-   - Use a transparent background for best results
-   - Design suggestions:
-     - Use Twitch purple (#9147ff) as primary color
-     - Include a rotation/cycle symbol or arrow
-     - Keep it simple and recognizable at small sizes
-
-2. **Run the generation script**:
-   ```bash
-   npm run generate-icons
-   ```
-
-3. **Verify output**:
-   The script will generate all four PNG files in the `icons/` directory:
+1. Ensure `icons/icon-source.svg` looks correct.
+2. Open `icons/generate-icons.html` in Chrome.
+3. Click **Generate & Download PNGs**.
+4. Move the downloaded files into `icons/` (overwrite):
    - `icon-16.png`
    - `icon-48.png`
    - `icon-128.png`
    - `icon-512.png`
+
+If downloads fail due to `file://` restrictions, run a local server from the repo root:
+
+```bash
+python -m http.server 8000
+```
+
+Then open:
+
+- `http://localhost:8000/icons/generate-icons.html`
 
 ### Example SVG Structure
 

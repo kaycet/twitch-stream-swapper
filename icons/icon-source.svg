@@ -1,15 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" shape-rendering="geometricPrecision">
+  <!-- Canonical source icon (export to PNG at 16/48/128/512).
+       Design goals: reads clearly at 16px, clean geometry, no raster artifacts. -->
+
   <!-- Background circle -->
-  <circle cx="32" cy="32" r="30" fill="#9147ff"/>
-  
-  <!-- Rotating circular arrow -->
-  <g fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Circular arrow path (270 degrees) -->
-    <path d="M 32 8 A 20 20 0 1 1 32 56" opacity="0.95"/>
-    <!-- Arrow head -->
-    <path d="M 28 8 L 32 4 L 36 8" fill="white" stroke="none"/>
+  <circle cx="256" cy="256" r="240" fill="#9147ff" />
+
+  <!-- Rotating circular arrow (dashed circle) -->
+  <g transform="rotate(-90 256 256)">
+    <!-- 270° arc (approx): dash length 3/4 circumference -->
+    <circle
+      cx="256"
+      cy="256"
+      r="176"
+      fill="none"
+      stroke="white"
+      stroke-width="32"
+      stroke-linecap="round"
+      stroke-dasharray="830 276"
+      opacity="0.95"
+    />
   </g>
-  
+
   <!-- Play button (center) -->
-  <polygon points="26,20 26,44 42,32" fill="white"/>
+  <polygon
+    points="220,170 220,342 360,256"
+    fill="white"
+    opacity="0.98"
+  />
 </svg>

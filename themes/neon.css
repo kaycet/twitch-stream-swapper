@@ -1,47 +1,16 @@
-/* Neon Theme - Premium Feature */
-
-body {
-  background: #0a0520;
-  color: #00ffff;
+/* Neon Theme - Supporter Feature */
+:root {
+  --bg: #0a0520;
+  --panel: #0f0630;
+  --panel-2: #120530;
+  --border: #9147ff;
+  --text: #00ffff;
+  --muted: rgba(0, 255, 255, 0.75);
+  --purple-accent: #00ffff;
+  --purple-accent-hover: #62ffff;
 }
 
-.container {
-  background: #0a0520;
-}
-
-header {
-  background: #120530;
-  border-bottom-color: #9147ff;
-}
-
-header h1 {
-  color: #00ffff;
-  text-shadow: 0 0 10px #00ffff;
-}
-
-.stream-item {
-  background: #1a0a40;
-  border-color: #9147ff;
-  box-shadow: 0 0 5px rgba(145, 71, 255, 0.3);
-}
-
-.stream-item:hover {
-  background: #220a50;
-  border-color: #00ffff;
-  box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
-}
-
-#streamInput {
-  background: #1a0a40;
-  border-color: #9147ff;
-  color: #00ffff;
-}
-
-#streamInput:focus {
-  border-color: #00ffff;
-  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
-}
-
+/* Keep a bit of neon flair */
 .btn-primary {
   background: linear-gradient(135deg, #9147ff 0%, #00ffff 100%);
   box-shadow: 0 0 15px rgba(145, 71, 255, 0.5);
@@ -54,61 +23,5 @@ header h1 {
 .status-indicator.live {
   background: #00ffff;
   box-shadow: 0 0 10px #00ffff;
-  animation: neon-pulse 2s infinite;
-}
-
-@keyframes neon-pulse {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 10px #00ffff;
-  }
-  50% {
-    opacity: 0.7;
-    box-shadow: 0 0 20px #00ffff, 0 0 30px #00ffff;
-  }
-}
-
-.stream-username {
-  color: #00ffff;
-  text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
-}
-
-.current-info {
-  color: #00ffff;
-  text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
-}
-
-.settings-section {
-  background: #120530;
-  border-color: #9147ff;
-  box-shadow: 0 0 10px rgba(145, 71, 255, 0.2);
-}
-
-.setting-item input,
-.setting-item select {
-  background: #1a0a40;
-  border-color: #9147ff;
-  color: #00ffff;
-}
-
-.setting-item input:focus,
-.setting-item select:focus {
-  border-color: #00ffff;
-  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
-}
-
-.footer {
-  background: #120530;
-  border-top-color: #9147ff;
-}
-
-.current-stream {
-  background: #120530;
-  border-top-color: #9147ff;
-}
-
-.premium-badge {
-  color: #00ffff;
-  text-shadow: 0 0 10px #00ffff;
 }
 

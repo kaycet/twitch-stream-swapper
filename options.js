@@ -1,10 +1,15 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
+import { TWITCH_CLIENT_ID } from './utils/config.js';
 
 class OptionsManager {
   constructor() {
     this.settings = null;
+    this.autoSaveTimer = null;
+    this.AUTO_SAVE_DELAY_MS = 600;
+    this.advancedDirty = false;
+    this.customThemeDirty = false;
   }
 
   async init() {
@@ -12,21 +17,34 @@ class OptionsManager {
     this.setupEventListeners();
     this.render();
     this.loadAnalytics();
+    this.setAdvancedDirty(false);
+    this.setCustomThemeDirty(false);
   }
 
   async loadSettings() {
     this.settings = await storage.getSettings();
   }
 
-  setupEventListeners() {
-    // Save button
-    document.getElementById('saveBtn').addEventListener('click', () => {
-      this.saveSettings();
-    });
 
-    // Premium activation
-    document.getElementById('activatePremium').addEventListener('click', () => {
-      this.activatePremium();
+  setupEventListeners() {
+    // Honor system supporter toggle (no verification)
+    document.getElementById('premiumStatus').addEventListener('change', (e) => {
+      const checked = !!e.target.checked;
+      if (checked) {
+        const ok = confirm('Enable Supporter Features?\n\nThis is an honor system toggle. If you supported development, thanks ❤️');
+        if (!ok) {
+          e.target.checked = false;
+          return;
+        }
+      }
+      this.settings.premiumStatus = checked;
+      storage.saveSettings(this.settings).then(() => {
+        this.updatePremiumFeatures();
+        if (this.settings.premiumStatus) this.loadAnalytics();
+        this.showSaveStatus('Saved', 'success');
+        this.setAdvancedDirty(false);
+        this.setCustomThemeDirty(false);
+      });
     });
 
     // Clear analytics
@@ -37,10 +55,12 @@ class OptionsManager {
     // Update donation buttons when links change
     document.getElementById('kofiLink').addEventListener('input', () => {
       this.updateDonationButtons();
+      this.scheduleAutoSaveGeneral();
     });
 
     document.getElementById('paypalLink').addEventListener('input', () => {
       this.updateDonationButtons();
+      this.scheduleAutoSaveGeneral();
     });
 
     // Premium feature checkboxes
@@ -48,20 +68,168 @@ class OptionsManager {
       if (e.target.checked && !this.settings.premiumStatus) {
         this.showPremiumReminder();
       }
+      this.scheduleAutoSaveGeneral();
     });
 
     document.getElementById('theme').addEventListener('change', (e) => {
       if (e.target.value !== 'default' && !this.settings.premiumStatus) {
         this.showPremiumReminder();
       }
+      // Show/hide custom theme editor and live-apply
+      this.updateCustomThemeVisibility();
+      this.applyTheme();
+
+      // Only autosave theme selection when not custom. Custom requires Apply.
+      if (e.target.value === 'custom') {
+        this.setCustomThemeDirty(true);
+        this.showSaveStatus('Pick your colors, then click “Apply Custom Theme”.', 'warning');
+      } else {
+        this.setCustomThemeDirty(false);
+        this.scheduleAutoSaveGeneral();
+      }
     });
+
+    // Advanced: client id override toggle
+    const overrideToggle = document.getElementById('overrideClientIdEnabled');
+    const clientIdInput = document.getElementById('clientId');
+    if (overrideToggle && clientIdInput) {
+      overrideToggle.addEventListener('change', () => {
+        const enabled = !!overrideToggle.checked;
+        clientIdInput.disabled = !enabled;
+        if (!enabled) {
+          clientIdInput.value = '';
+        }
+        this.setAdvancedDirty(true);
+      });
+
+      // Advanced settings require Apply + confirmation.
+      clientIdInput.addEventListener('change', () => {
+        this.setAdvancedDirty(true);
+      });
+    }
+
+    // Advanced apply button
+    const advancedApplyBtn = document.getElementById('advancedApplyBtn');
+    if (advancedApplyBtn) {
+      advancedApplyBtn.addEventListener('click', async () => {
+        await this.applyAdvancedSettings();
+      });
+    }
+
+    // Auto-save: basic + category controls
+    const wire = (id, evt = 'change') => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener(evt, () => this.scheduleAutoSaveGeneral());
+    };
+
+    wire('checkInterval', 'change');
+    wire('redirectEnabled', 'change');
+    wire('promptBeforeSwitch', 'change');
+    wire('fallbackEnabled', 'change');
+    wire('fallbackCategory', 'input');
+
+    // Custom theme inputs (live preview; requires Apply to persist)
+    this.setupCustomThemeListeners();
+
+    const customThemeApplyBtn = document.getElementById('customThemeApplyBtn');
+    if (customThemeApplyBtn) {
+      customThemeApplyBtn.addEventListener('click', async () => {
+        await this.applyCustomThemeSettings();
+      });
+    }
+  }
+
+  setupCustomThemeListeners() {
+    const pairs = [
+      { colorId: 'customAccent', hexId: 'customAccentHex' },
+      { colorId: 'customBg', hexId: 'customBgHex' },
+      { colorId: 'customPanel', hexId: 'customPanelHex' },
+      { colorId: 'customText', hexId: 'customTextHex' },
+      { colorId: 'customBorder', hexId: 'customBorderHex' },
+      { colorId: 'customMuted', hexId: 'customMutedHex' }
+    ];
+
+    const normalizeHex = (v) => {
+      const s = String(v || '').trim();
+      if (!s) return null;
+      const withHash = s.startsWith('#') ? s : `#${s}`;
+      if (!/^#[0-9a-fA-F]{6}$/.test(withHash)) return null;
+      return withHash.toUpperCase();
+    };
+
+    for (const { colorId, hexId } of pairs) {
+      const colorEl = document.getElementById(colorId);
+      const hexEl = document.getElementById(hexId);
+      if (!colorEl || !hexEl) continue;
+
+      // Color picker drives hex input
+      colorEl.addEventListener('input', () => {
+        const hex = normalizeHex(colorEl.value);
+        if (hex) hexEl.value = hex;
+        this.applyTheme();
+        this.setCustomThemeDirty(true);
+      });
+
+      // Hex input drives color picker (only when valid)
+      hexEl.addEventListener('input', () => {
+        const hex = normalizeHex(hexEl.value);
+        if (hex) {
+          colorEl.value = hex;
+          hexEl.classList.remove('input-error');
+        } else if (hexEl.value.trim().length > 0) {
+          hexEl.classList.add('input-error');
+        } else {
+          hexEl.classList.remove('input-error');
+        }
+        this.applyTheme();
+        this.setCustomThemeDirty(true);
+      });
+    }
+  }
+
+  setAdvancedDirty(isDirty) {
+    this.advancedDirty = !!isDirty;
+    const btn = document.getElementById('advancedApplyBtn');
+    if (btn) btn.disabled = !this.advancedDirty;
+  }
+
+  setCustomThemeDirty(isDirty) {
+    this.customThemeDirty = !!isDirty;
+    const btn = document.getElementById('customThemeApplyBtn');
+    if (btn) btn.disabled = !this.customThemeDirty;
+  }
+
+  scheduleAutoSaveGeneral() {
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+    }
+    this.autoSaveTimer = setTimeout(() => {
+      this.saveGeneralSettings();
+    }, this.AUTO_SAVE_DELAY_MS);
   }
 
   render() {
     // Basic settings
-    document.getElementById('clientId').value = this.settings.clientId || '';
-    document.getElementById('checkInterval').value = this.settings.checkInterval || 60000;
-    document.getElementById('redirectEnabled').checked = this.settings.redirectEnabled !== false;
+    // Only show user's custom Client ID if they've set one (not the default)
+    // Check if current Client ID is the default placeholder
+    const isDefaultClientId = !this.settings.clientId || 
+                              this.settings.clientId === TWITCH_CLIENT_ID ||
+                              this.settings.clientId === "";
+    const userClientId = isDefaultClientId ? '' : this.settings.clientId;
+    // Advanced client id override UI
+    const overrideToggle = document.getElementById('overrideClientIdEnabled');
+    const clientIdInput = document.getElementById('clientId');
+    if (overrideToggle && clientIdInput) {
+      overrideToggle.checked = !!userClientId;
+      clientIdInput.disabled = !overrideToggle.checked;
+      clientIdInput.value = userClientId;
+    }
+    // Check interval dropdown (safe presets)
+    const allowedIntervals = new Set([60000, 120000, 300000, 600000]);
+    const interval = allowedIntervals.has(this.settings.checkInterval) ? this.settings.checkInterval : 60000;
+    document.getElementById('checkInterval').value = String(interval);
+    document.getElementById('redirectEnabled').checked = !!this.settings.redirectEnabled;
     document.getElementById('promptBeforeSwitch').checked = this.settings.promptBeforeSwitch || false;
     document.getElementById('fallbackCategory').value = this.settings.fallbackCategory || 'Just Chatting';
     document.getElementById('fallbackEnabled').checked = !!this.settings.fallbackCategory;
@@ -71,6 +239,10 @@ class OptionsManager {
     document.getElementById('notificationsEnabled').checked = this.settings.notificationsEnabled || false;
     document.getElementById('theme').value = this.settings.theme || 'default';
 
+    // Custom theme values
+    this.renderCustomTheme();
+    this.updateCustomThemeVisibility();
+
     // Donation links (stored separately or in settings)
     const donationLinks = this.settings.donationLinks || {};
     document.getElementById('kofiLink').value = donationLinks.kofi || '';
@@ -79,6 +251,54 @@ class OptionsManager {
     this.updateDonationButtons();
     this.updatePremiumFeatures();
     this.applyTheme();
+  }
+
+  renderCustomTheme() {
+    const t = this.settings?.customTheme || {};
+    const defaults = {
+      accent: '#9147FF',
+      bg: '#0E0E10',
+      panel: '#18181B',
+      text: '#EFEFF1',
+      border: '#2D2D35',
+      muted: '#ADADB8'
+    };
+
+    const set = (colorId, hexId, value) => {
+      const colorEl = document.getElementById(colorId);
+      const hexEl = document.getElementById(hexId);
+      if (!colorEl || !hexEl) return;
+      const v = (value || defaults[colorId.replace('custom', '').toLowerCase()] || '#FFFFFF').toUpperCase();
+      colorEl.value = v;
+      hexEl.value = v;
+      hexEl.classList.remove('input-error');
+    };
+
+    set('customAccent', 'customAccentHex', t.accent || defaults.accent);
+    set('customBg', 'customBgHex', t.bg || defaults.bg);
+    set('customPanel', 'customPanelHex', t.panel || defaults.panel);
+    set('customText', 'customTextHex', t.text || defaults.text);
+    set('customBorder', 'customBorderHex', t.border || defaults.border);
+    set('customMuted', 'customMutedHex', t.muted || defaults.muted);
+  }
+
+  updateCustomThemeVisibility() {
+    const theme = document.getElementById('theme')?.value || 'default';
+    const section = document.getElementById('customThemeSection');
+    if (!section) return;
+
+    const show = theme === 'custom';
+    section.style.display = show ? 'block' : 'none';
+
+    // Disable editors if supporter features aren't enabled
+    const enabled = !!this.settings?.premiumStatus;
+    const inputs = section.querySelectorAll('input');
+    inputs.forEach((el) => {
+      el.disabled = !enabled;
+    });
+
+    const btn = document.getElementById('customThemeApplyBtn');
+    if (btn) btn.disabled = !enabled || !this.customThemeDirty;
   }
 
   updateDonationButtons() {
@@ -143,15 +363,15 @@ class OptionsManager {
     }, 5000);
   }
 
-  async saveSettings() {
-    const saveBtn = document.getElementById('saveBtn');
+  async saveGeneralSettings() {
     try {
-      saveBtn.disabled = true;
-      this.showSaveStatus(ErrorMessageManager.getLoadingMessage('saveSettings'), 'loading');
+      this.showSaveStatus('Saving…', 'loading');
+
+      const allowedIntervals = new Set([60000, 120000, 300000, 600000]);
+      const checkInterval = parseInt(document.getElementById('checkInterval').value, 10) || 60000;
 
       const newSettings = {
-        clientId: document.getElementById('clientId').value.trim(),
-        checkInterval: parseInt(document.getElementById('checkInterval').value) || 60000,
+        checkInterval: allowedIntervals.has(checkInterval) ? checkInterval : 60000,
         redirectEnabled: document.getElementById('redirectEnabled').checked,
         promptBeforeSwitch: document.getElementById('promptBeforeSwitch').checked,
         fallbackCategory: document.getElementById('fallbackEnabled').checked 
@@ -165,43 +385,53 @@ class OptionsManager {
         }
       };
 
-      // Validate check interval
-      if (newSettings.checkInterval < 30000 || newSettings.checkInterval > 300000) {
-        const errorInfo = ErrorMessageManager.getErrorMessage('Check interval must be between 30,000 and 300,000 milliseconds', 'saveSettings');
+      // Validate custom theme hex values when selected
+      if (newSettings.theme === 'custom') {
+        const mustHex = (v) => /^#[0-9a-fA-F]{6}$/.test(String(v || '').trim());
+        const fields = Object.entries(newSettings.customTheme);
+        for (const [k, v] of fields) {
+          if (!mustHex(v)) {
+            const errorInfo = ErrorMessageManager.getErrorMessage(`Invalid color for ${k} (use #RRGGBB)`, 'saveSettings');
+            this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+            return;
+          }
+          newSettings.customTheme[k] = String(v).trim().toUpperCase();
+        }
+      }
+
+      // Sanitize category
+      if (newSettings.fallbackCategory) {
+        // eslint-disable-next-line no-control-regex
+        newSettings.fallbackCategory = newSettings.fallbackCategory.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 50);
+      }
+
+      // Validate URLs if provided
+      const validateUrl = (value) => {
+        const v = (value || '').trim();
+        if (!v) return '';
+        try {
+          const u = new URL(v);
+          if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+          return u.toString();
+        } catch {
+          return null;
+        }
+      };
+
+      const kofi = validateUrl(newSettings.donationLinks.kofi);
+      const paypal = validateUrl(newSettings.donationLinks.paypal);
+      if (kofi === null || paypal === null) {
+        const errorInfo = ErrorMessageManager.getErrorMessage('Invalid donation URL (must be http/https)', 'saveSettings');
         this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
         return;
       }
-
-      // Validate client ID if provided
-      if (newSettings.clientId) {
-        if (newSettings.clientId.length < 10) {
-          const errorInfo = ErrorMessageManager.getErrorMessage('Client ID appears to be invalid', 'saveSettings');
-          this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
-          return;
-        }
-
-        try {
-          await twitchAPI.initialize(newSettings.clientId);
-          // Test the API
-          await twitchAPI.getCategoryId('Just Chatting');
-        } catch (error) {
-          const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
-          this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
-          return;
-        }
-      } else {
-        // Warn if no client ID but redirect is enabled
-        if (newSettings.redirectEnabled) {
-          this.showSaveStatus('Warning: Auto-switching requires a Twitch Client ID. Please configure one.', 'warning');
-          // Still save, but warn user
-        }
-      }
+      newSettings.donationLinks.kofi = kofi;
+      newSettings.donationLinks.paypal = paypal;
 
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
 
-      const successInfo = ErrorMessageManager.getSuccessMessage('saveSettings');
-      this.showSaveStatus(successInfo.message, 'success');
+      this.showSaveStatus('Saved', 'success');
       this.applyTheme();
 
       // Reload analytics if premium
@@ -212,51 +442,95 @@ class OptionsManager {
       console.error('Error saving settings:', error);
       const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
       this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
-    } finally {
-      saveBtn.disabled = false;
     }
   }
 
-  async activatePremium() {
-    const code = document.getElementById('premiumCode').value.trim();
-    const activateBtn = document.getElementById('activatePremium');
-    
-    if (!code) {
-      const errorInfo = ErrorMessageManager.getErrorMessage('Please enter an activation code', 'activatePremium');
-      this.showSaveStatus(errorInfo.message, 'error');
-      return;
+  async applyAdvancedSettings() {
+    if (!this.advancedDirty) return;
+    const overrideEnabled = !!document.getElementById('overrideClientIdEnabled')?.checked;
+    const clientIdInputValue = document.getElementById('clientId')?.value?.trim() || '';
+
+    const ok = confirm(
+      'Apply Advanced settings?\n\nThese can break API access if misconfigured.'
+    );
+    if (!ok) return;
+
+    // Client ID override (advanced) — empty means "use built-in"
+    let clientIdToSave = '';
+    if (overrideEnabled) {
+      if (!/^[a-z0-9]{10,64}$/i.test(clientIdInputValue)) {
+        const errorInfo = ErrorMessageManager.getErrorMessage('Client ID appears to be invalid', 'saveSettings');
+        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+        return;
+      }
+      clientIdToSave = clientIdInputValue;
     }
 
     try {
-      activateBtn.disabled = true;
-      this.showSaveStatus(ErrorMessageManager.getLoadingMessage('activatePremium'), 'loading');
+      this.showSaveStatus('Applying advanced settings…', 'loading');
 
-      // Simple activation (in production, this would verify with a server)
-      // For now, accept any non-empty code as activation
-      // In real implementation, you'd verify this with your donation platform
-      
-      // For demo purposes, accept codes like "PREMIUM2024" or similar
-      if (code.length > 5) {
-        this.settings.premiumStatus = true;
-        await storage.saveSettings(this.settings);
-        document.getElementById('premiumStatus').checked = true;
-        document.getElementById('premiumCode').value = '';
-        this.updatePremiumFeatures();
-        this.loadAnalytics();
-        const successInfo = ErrorMessageManager.getSuccessMessage('activatePremium');
-        this.showSaveStatus(successInfo.message, 'success');
-      } else {
-        const errorInfo = ErrorMessageManager.getErrorMessage('Invalid activation code', 'activatePremium');
-        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+      // Sanity check the override (developer-only)
+      if (clientIdToSave) {
+        await twitchAPI.initialize(clientIdToSave);
+        await twitchAPI.getCategoryId('Just Chatting');
       }
+
+      const newSettings = { clientId: clientIdToSave };
+      await storage.saveSettings(newSettings);
+      this.settings = { ...this.settings, ...newSettings };
+
+      this.setAdvancedDirty(false);
+      this.showSaveStatus('Advanced settings applied', 'success');
     } catch (error) {
-      console.error('Error activating premium:', error);
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'activatePremium');
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
       this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
-    } finally {
-      activateBtn.disabled = false;
     }
   }
+
+  async applyCustomThemeSettings() {
+    if (!this.customThemeDirty) return;
+    if (!this.settings?.premiumStatus) {
+      this.showPremiumReminder();
+      return;
+    }
+
+    const ok = confirm('Apply Custom Theme?\n\nThis will save these colors and apply them everywhere.');
+    if (!ok) return;
+
+    const newTheme = {
+      accent: document.getElementById('customAccentHex')?.value?.trim() || '',
+      bg: document.getElementById('customBgHex')?.value?.trim() || '',
+      panel: document.getElementById('customPanelHex')?.value?.trim() || '',
+      text: document.getElementById('customTextHex')?.value?.trim() || '',
+      border: document.getElementById('customBorderHex')?.value?.trim() || '',
+      muted: document.getElementById('customMutedHex')?.value?.trim() || ''
+    };
+
+    const mustHex = (v) => /^#[0-9a-fA-F]{6}$/.test(String(v || '').trim());
+    for (const [k, v] of Object.entries(newTheme)) {
+      if (!mustHex(v)) {
+        const errorInfo = ErrorMessageManager.getErrorMessage(`Invalid color for ${k} (use #RRGGBB)`, 'saveSettings');
+        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+        return;
+      }
+      newTheme[k] = String(v).trim().toUpperCase();
+    }
+
+    try {
+      this.showSaveStatus('Applying custom theme…', 'loading');
+      const newSettings = { theme: 'custom', customTheme: newTheme };
+      await storage.saveSettings(newSettings);
+      this.settings = { ...this.settings, ...newSettings };
+      this.applyTheme();
+      this.setCustomThemeDirty(false);
+      this.showSaveStatus('Custom theme applied', 'success');
+    } catch (error) {
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
+      this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+    }
+  }
+
+  // No activation codes in honor-system mode
 
   async loadAnalytics() {
     if (!this.settings.premiumStatus) {
@@ -341,13 +615,59 @@ class OptionsManager {
     const theme = this.settings.theme || 'default';
     document.body.className = `theme-${theme}`;
     
-    // Load theme CSS if premium
+    // Remove any previously injected theme link(s)
+    document.querySelectorAll('link[data-tsr-theme="1"]').forEach((el) => el.remove());
+
+    // Apply custom theme variables (supporter-only)
+    if (theme === 'custom') {
+      if (this.settings.premiumStatus) {
+        const t = this.settings.customTheme || {};
+        this.applyCustomThemeVars(t);
+      }
+      return;
+    }
+
+    // Clear custom vars back to defaults
+    this.clearCustomThemeVars();
+
+    // Load theme CSS if supporter features enabled
     if (this.settings.premiumStatus && theme !== 'default') {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = `themes/${theme}.css`;
+      link.dataset.tsrTheme = '1';
       document.head.appendChild(link);
     }
+  }
+
+  applyCustomThemeVars(themeObj) {
+    const root = document.documentElement;
+    const t = themeObj || {};
+    const set = (name, value) => {
+      if (value) root.style.setProperty(name, value);
+    };
+    set('--purple-accent', t.accent);
+    set('--purple-accent-hover', t.accentHover || t.accent);
+    set('--bg', t.bg);
+    set('--panel', t.panel);
+    set('--panel-2', t.panel2 || t.panel);
+    set('--border', t.border);
+    set('--text', t.text);
+    set('--muted', t.muted || '#adadb8');
+  }
+
+  clearCustomThemeVars() {
+    const root = document.documentElement;
+    [
+      '--purple-accent',
+      '--purple-accent-hover',
+      '--bg',
+      '--panel',
+      '--panel-2',
+      '--border',
+      '--text',
+      '--muted'
+    ].forEach((k) => root.style.removeProperty(k));
   }
 
   showSaveStatus(message, type) {

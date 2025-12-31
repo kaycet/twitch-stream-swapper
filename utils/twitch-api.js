@@ -2,10 +2,13 @@
  * Twitch API wrapper with batch requests, caching, and rate limit handling
  */
 
+import { TOKEN_BROKER_URL } from './config.js';
+
 class TwitchAPI {
   constructor() {
     this.baseURL = 'https://api.twitch.tv/helix';
     this.clientId = null;
+    this.proxyEnabled = false;
     this.cache = new Map();
     this.cacheTTL = 30000; // 30 seconds
     this.rateLimitQueue = [];
@@ -21,6 +24,16 @@ class TwitchAPI {
    */
   async initialize(clientId) {
     this.clientId = clientId;
+    this.proxyEnabled = !!(TOKEN_BROKER_URL && !TOKEN_BROKER_URL.includes('YOUR_TOKEN_BROKER_HOST'));
+
+    // If proxy is enabled, route all Helix calls through the broker.
+    // This keeps tokens off the client entirely.
+    if (this.proxyEnabled) {
+      const base = TOKEN_BROKER_URL.replace(/\/$/, '');
+      this.baseURL = `${base}/helix`;
+    } else {
+      this.baseURL = 'https://api.twitch.tv/helix';
+    }
   }
 
   /**
@@ -28,13 +41,21 @@ class TwitchAPI {
    * @returns {Object}
    */
   _getHeaders() {
+    // If proxy is enabled, the broker adds auth headers server-side.
+    if (this.proxyEnabled) {
+      return { 'Accept': 'application/json' };
+    }
+
+    // Dev fallback: call Helix directly with Client-ID only.
     if (!this.clientId) {
-      throw new Error('Twitch Client ID not set. Please configure in options.');
+      const err = new Error('Twitch Client ID not set.');
+      err.code = 'AUTH_ERROR';
+      throw err;
     }
 
     return {
       'Client-ID': this.clientId,
-      'Accept': 'application/vnd.twitchtv.v5+json'
+      'Accept': 'application/json'
     };
   }
 
@@ -119,7 +140,7 @@ class TwitchAPI {
         }
 
         if (response.status === 401) {
-          const error = new Error('Invalid Twitch Client ID. Please check your settings.');
+          const error = new Error('Unauthorized by Twitch API (missing/invalid access token or Client ID).');
           error.code = 'AUTH_ERROR';
           throw error;
         }
@@ -144,7 +165,7 @@ class TwitchAPI {
       let data;
       try {
         data = await response.json();
-      } catch (parseError) {
+      } catch {
         const error = new Error('Invalid JSON response from Twitch API');
         error.code = 'PARSE_ERROR';
         throw error;
@@ -274,10 +295,37 @@ class TwitchAPI {
       if (data.data && data.data.length > 0) {
         return data.data[0].id;
       }
+
+      // Fallback: use search endpoint if name lookup doesn't match exactly
+      const results = await this.searchCategories(categoryName);
+      if (results.length > 0) {
+        // Prefer exact name match (case-insensitive), else take first result
+        const exact = results.find(r => (r.name || '').toLowerCase() === String(categoryName || '').toLowerCase());
+        return (exact || results[0]).id || null;
+      }
+
       return null;
     } catch (error) {
       console.error('Error getting category ID:', error);
       return null;
+    }
+  }
+
+  /**
+   * Search categories by query string (typeahead support)
+   * @param {string} query - Search query
+   * @param {number} first - Max results
+   * @returns {Promise<Array<{id: string, name: string}>>}
+   */
+  async searchCategories(query, first = 10) {
+    const q = String(query || '').trim();
+    if (q.length < 2) return [];
+    try {
+      const data = await this._request('/search/categories', { query: q, first });
+      return (data?.data || []).map((c) => ({ id: c.id, name: c.name }));
+    } catch (error) {
+      console.error('Error searching categories:', error);
+      return [];
     }
   }
 

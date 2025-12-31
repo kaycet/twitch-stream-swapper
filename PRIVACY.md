@@ -4,7 +4,7 @@
 
 ## Overview
 
-Twitch Stream Rotator ("the Extension") is committed to protecting your privacy. This privacy policy explains how the Extension handles data.
+Twitch Stream Swapper ("the Extension") is committed to protecting your privacy. This privacy policy explains how the Extension handles data.
 
 ## Data Collection
 

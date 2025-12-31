@@ -37,7 +37,7 @@ class NotificationManager {
           // Validate URL format
           new URL(thumbnailUrl);
           iconUrl = thumbnailUrl;
-        } catch (e) {
+        } catch {
           // Invalid URL, use default
         }
       }

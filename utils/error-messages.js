@@ -34,20 +34,20 @@ class ErrorMessageManager {
       };
     }
 
-    // Authentication/Client ID errors
+    // Authentication errors (production uses token broker + app access token)
     if (errorString.includes('client id') || errorString.includes('401') || 
         errorString.includes('unauthorized') || errorString.includes('invalid')) {
       if (context === 'saveSettings' || context === 'checkStatus') {
         return {
-          message: 'Invalid Twitch Client ID. Please verify your Client ID in settings.',
+          message: 'Twitch API authorization failed.',
           type: 'error',
-          action: 'Go to Settings and check your Twitch Client ID. Get one at https://dev.twitch.tv/console/apps'
+          action: 'If you are the developer: verify the broker is deployed and proxies Helix (GET https://<your-broker>/helix/streams?...).'
         };
       }
       return {
-        message: 'Twitch Client ID not configured. Please set it up in Settings.',
+        message: 'Twitch API is not configured.',
         type: 'error',
-        action: 'Open Settings to configure your Twitch Client ID.'
+        action: 'If you are the developer: configure TWITCH_CLIENT_ID and TOKEN_BROKER_URL.'
       };
     }
 
@@ -101,9 +101,9 @@ class ErrorMessageManager {
       }
       if (errorString.includes('limit') || errorString.includes('maximum')) {
         return {
-          message: 'Free tier limited to 10 streams. Upgrade to Premium for unlimited streams!',
+          message: 'Free tier limited to 10 streams. Enable Supporter Features (honor system) for unlimited streams.',
           type: 'info',
-          action: 'Go to Settings to upgrade to Premium.'
+          action: 'Go to Settings → Supporter Features.'
         };
       }
     }
@@ -111,21 +111,19 @@ class ErrorMessageManager {
     if (context === 'saveSettings') {
       if (errorString.includes('client id')) {
         return {
-          message: 'Invalid Twitch Client ID. Please check your settings.',
+          message: 'Invalid Twitch Client ID (advanced setting).',
           type: 'error',
-          action: 'Verify your Client ID at https://dev.twitch.tv/console/apps'
+          action: 'If you changed the Client ID manually, verify it matches your Twitch app. Otherwise, clear the field and Save to use the built-in config.'
         };
       }
     }
 
     if (context === 'activatePremium') {
-      if (errorString.includes('invalid') || errorString.includes('code')) {
-        return {
-          message: 'Invalid activation code. Please check the code and try again.',
-          type: 'error',
-          action: 'Make sure you entered the code correctly. Contact support if the issue persists.'
-        };
-      }
+      return {
+        message: 'Failed to enable supporter features. Please try again.',
+        type: 'error',
+        action: 'If the issue persists, try reloading the options page.'
+      };
     }
 
     // Generic error fallback
@@ -147,7 +145,7 @@ class ErrorMessageManager {
       addStream: `Successfully added ${data.username || 'stream'} to your list!`,
       removeStream: 'Stream removed from your list.',
       saveSettings: 'Settings saved successfully!',
-      activatePremium: 'Premium activated! Thank you for your support! 🎉',
+      activatePremium: 'Supporter features enabled. Thank you for your support!',
       clearAnalytics: 'Analytics data cleared successfully.',
       reorderStreams: 'Stream order updated.',
       checkStatus: 'Stream status updated.'
@@ -170,7 +168,7 @@ class ErrorMessageManager {
       checkStatus: 'Checking stream status...',
       saveSettings: 'Saving settings...',
       loadData: 'Loading...',
-      activatePremium: 'Activating premium...',
+      activatePremium: 'Enabling supporter features...',
       clearAnalytics: 'Clearing analytics...'
     };
 

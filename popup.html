@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Stream Rotator</title>
+  <title>Twitch Stream Swapper</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Stream Rotator</h1>
+      <h1>Stream Swapper</h1>
       <div class="header-actions">
         <button id="helpBtn" class="icon-btn" title="Keyboard Shortcuts">?</button>
         <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
@@ -17,6 +17,23 @@
     </header>
 
     <div id="statusMessage" class="status-message"></div>
+
+    <div class="autoswap-bar">
+      <div class="autoswap-left">
+        <div class="autoswap-title">Auto-Swap</div>
+        <div class="autoswap-subtitle">Redirect Twitch to the top live streamer</div>
+      </div>
+      <div class="autoswap-right">
+        <button id="goManagedTabBtn" class="icon-mini-btn" title="Jump to the managed Twitch tab" style="display:none;">
+          ↩
+        </button>
+        <label class="switch" title="Toggle Auto-Swap">
+          <input type="checkbox" id="autoSwapToggle">
+          <span class="slider"></span>
+        </label>
+        <span id="autoSwapStatus" class="autoswap-status off">OFF</span>
+      </div>
+    </div>
 
     <div class="stream-list-container">
       <div class="add-stream-section">
@@ -42,18 +59,40 @@
       <div class="current-info" id="currentInfo"></div>
     </div>
 
-    <div class="category-fallback-widget" id="categoryFallbackWidget" style="display: none;">
-      <div class="fallback-label">
-        <span class="fallback-icon">🎲</span>
-        <span>Category Fallback:</span>
+    <div class="category-fallback-widget" id="categoryFallbackWidget">
+      <div class="fallback-top">
+        <div class="fallback-title">
+          <span class="fallback-icon">🎲</span>
+          <span>Category Fallback</span>
+        </div>
+        <label class="switch" title="Enable/Disable Category Fallback">
+          <input type="checkbox" id="fallbackEnabledToggle">
+          <span class="slider"></span>
+        </label>
       </div>
-      <div class="fallback-category-name"></div>
-      <button class="fallback-settings-btn" id="fallbackSettingsBtn" title="Open Settings">⚙️</button>
+
+      <div class="fallback-body">
+        <input
+          type="text"
+          id="fallbackCategoryInput"
+          placeholder="Start typing a category… (e.g. Just Chatting)"
+          autocomplete="off"
+          list="fallbackCategorySuggestions"
+        >
+        <datalist id="fallbackCategorySuggestions"></datalist>
+
+        <div class="fallback-actions">
+          <button class="icon-mini-btn icon-mini-btn--primary" id="fallbackApplyBtn" title="Apply category fallback now">✓</button>
+          <button class="icon-mini-btn" id="fallbackSettingsBtn" title="More settings">⚙️</button>
+        </div>
+      </div>
+
+      <div class="fallback-hint" id="fallbackHint" style="display:none;"></div>
     </div>
 
     <div class="footer">
       <div class="stream-count" id="streamCount">0 streams</div>
-      <div class="premium-badge" id="premiumBadge" style="display: none;">⭐ Premium</div>
+      <div class="premium-badge" id="premiumBadge" style="display: none;">⭐ Supporter</div>
     </div>
   </div>
 

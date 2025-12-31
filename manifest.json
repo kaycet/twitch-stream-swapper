@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Twitch Stream Rotator",
+  "name": "Twitch Stream Swapper",
   "version": "1.0.0",
-  "description": "Automatically rotate between Twitch streams based on priority. Auto-switches when higher priority streams go live.",
+  "description": "Automatically swap between Twitch streams based on priority. Auto-switches when higher priority streams go live.",
   "permissions": [
     "storage",
     "tabs",
@@ -11,10 +11,13 @@
   ],
   "host_permissions": [
     "https://api.twitch.tv/*",
-    "https://www.twitch.tv/*"
+    "https://twitch.tv/*",
+    "https://*.twitch.tv/*",
+    "https://tsr-token-broker.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
@@ -30,6 +33,13 @@
     "128": "icons/icon-128.png",
     "512": "icons/icon-512.png"
   },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["*://twitch.tv/*", "*://*.twitch.tv/*"],
+      "js": ["content/autoswap-indicator.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }
 

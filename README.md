@@ -1,22 +1,24 @@
-# Twitch Stream Rotator
+# Twitch Stream Swapper
 
-A Chrome extension that automatically rotates between Twitch streams based on priority. Auto-switches when higher priority streams go live, with category fallback and premium features.
+A Chrome extension that automatically swaps between Twitch streams based on priority. Auto-switches when higher priority streams go live, with category fallback and supporter features.
+
+**Repo:** `https://github.com/kaycet/twitch-stream-swapper/`
 
 ## Features
 
 ### Core Features
-- **Priority-based Stream Rotation**: Drag-and-drop interface to prioritize your favorite streamers with smooth visual feedback
+- **Priority-based Stream Swapping**: Drag-and-drop interface to prioritize your favorite streamers with smooth visual feedback
 - **Enhanced Drag-and-Drop**: Visual ghost preview, drop zone highlighting, and smooth animations for intuitive reordering
 - **Auto-Switching**: Automatically redirects to the highest priority live stream
 - **Category Fallback**: When no streams in your list are live, shows a random stream from a selected category
 - **Real-time Status**: Live/offline indicators for all streams in your list
 - **Smart Polling**: Efficient API usage with batching, caching, and rate limit handling
 
-### Premium Features (Soft Paywall)
+### Supporter Features (Honor system)
 - **Desktop Notifications**: Get notified when streams go live
 - **Custom Themes**: Multiple UI themes (Dark, Neon)
 - **Analytics**: Track viewing time per stream and switch frequency
-- **Unlimited Streams**: Free tier limited to 10 streams, premium unlimited
+- **Unlimited Streams**: Free tier limited to 10 streams; enabling supporter features unlocks unlimited
 
 ## Installation
 
@@ -25,22 +27,18 @@ A Chrome extension that automatically rotates between Twitch streams based on pr
 1. Clone this repository:
 ```bash
 git clone <repository-url>
-cd twitch-stream-rotator
+cd twitch-stream-swapper
 ```
 
 2. Open Chrome and navigate to `chrome://extensions/`
 
 3. Enable "Developer mode" (toggle in top right)
 
-4. Click "Load unpacked" and select the `twitch-stream-rotator` directory
+4. Click "Load unpacked" and select the project directory
 
-5. Get a Twitch Client ID:
-   - Go to [Twitch Developer Console](https://dev.twitch.tv/console/apps)
-   - Create a new application
-   - Copy the Client ID
-   - Open the extension options and paste the Client ID
+5. Add your favorite streamers and start using!
 
-6. Add your favorite streamers and start using!
+**Note:** For production (Chrome Web Store), ship the extension with built-in Twitch API access (no user setup). See the token broker notes in `token-broker/` and ensure `utils/config.js` and `manifest.json` are configured for your broker.
 
 ### Chrome Web Store
 
@@ -60,10 +58,9 @@ Coming soon! (Once published)
 ### Setting Up Auto-Switching
 
 1. Open extension options (click ⚙️ in popup or right-click extension → Options)
-2. Enter your Twitch Client ID (required)
-3. Configure check interval (default: 60 seconds)
-4. Enable "Auto-Switching" toggle
-5. The extension will automatically redirect to the highest priority live stream
+2. Configure check interval (default: 60 seconds)
+3. Enable "Auto-Switching" toggle
+4. The extension will automatically redirect to the highest priority live stream
 
 ### Category Fallback
 
@@ -71,25 +68,47 @@ Coming soon! (Once published)
 2. Enable "Category Fallback"
 3. When no streams in your list are live, a random stream from that category will be shown
 
-### Premium Features
+### Supporter Features (Honor system)
 
-Support the developer to unlock premium features:
+If you’d like to support development, you can enable “Supporter Features” in Options. There are **no activation codes** (honor system).
 
-1. In options, scroll to "Support the Developer" section
-2. Configure your donation links (Ko-fi, PayPal)
-3. After donation, enter the activation code provided
-4. Premium features will be unlocked:
-   - Desktop notifications
-   - Custom themes
-   - Analytics dashboard
-   - Unlimited stream slots
+Supporter features include:
+- Desktop notifications
+- Custom themes
+- Analytics dashboard
+- Unlimited stream slots
+
+## GitLab CI + Releases (Chrome Web Store friendly)
+
+This repo includes a GitLab pipeline that runs:
+- **Lint** (`npm run lint`)
+- **Tests** (`npm run test`)
+- **Package** (`npm run package`) → produces a Web Store–ready ZIP as a pipeline artifact
+
+### Release process (recommended)
+
+1. Update `manifest.json` `"version"` (e.g. `1.0.1`)
+2. Commit the change
+3. Tag the commit:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+4. GitLab CI will:
+   - run lint + tests
+   - build `dist/twitch-stream-swapper-<version>.zip`
+   - create a **GitLab Release** on the tag with an **Assets link** to download the ZIP
+
+5. Upload that ZIP to the Chrome Web Store.
 
 ## Development
 
 ### Project Structure
 
 ```
-twitch-stream-rotator/
+twitch-stream-swapper/
 ├── manifest.json          # Extension manifest
 ├── popup.html/js/css      # Main popup UI
 ├── options.html/js/css    # Settings page
@@ -106,22 +125,9 @@ twitch-stream-rotator/
 
 Icons are required for Chrome Web Store submission. See `ICONS.md` for generation instructions.
 
-### Using Vibe Kanban
+### Built with AI assistance
 
-This project is set up to work with [Vibe Kanban](https://www.vibekanban.com/) for AI-assisted development:
-
-```bash
-# Start Vibe Kanban (auto-detects this project)
-npx vibe-kanban
-```
-
-Vibe Kanban allows you to:
-- Run multiple coding agents in parallel
-- Review code changes through built-in diffs
-- Manage development tasks with a kanban board
-- Work with various AI coding agents (Claude Code, Cursor CLI, etc.)
-
-The project is automatically detected and configured when you run Vibe Kanban.
+This project was built with help from AI coding assistants (including Cursor) to accelerate iteration and debugging. All code changes are reviewed and maintained by the project owner.
 
 ### Testing
 
@@ -129,20 +135,21 @@ The project is automatically detected and configured when you run Vibe Kanban.
 2. Test with a few streamers
 3. Verify auto-switching works
 4. Test category fallback
-5. Test premium features (manually enable premium status for testing)
+5. (Optional) Enable “Supporter Features” in Options to test supporter-only UX
 
 ## Configuration
 
 ### Required Settings
 
-- **Twitch Client ID**: Required for API access. Get one at [Twitch Developer Console](https://dev.twitch.tv/console/apps)
+- None for end users (production model). The extension should include built-in API access.
 
 ### Optional Settings
 
+- **Twitch Client ID (Advanced)**: Override the built-in Client ID (useful for developers/testing)
 - **Check Interval**: How often to poll for stream status (default: 60000ms = 1 minute)
 - **Auto-Switching**: Enable/disable automatic tab redirection
 - **Category Fallback**: Category name for fallback streams
-- **Donation Links**: Ko-fi and PayPal links for premium activation
+- **Donation Links**: Ko-fi and PayPal links (optional)
 
 ## Performance
 
@@ -188,8 +195,7 @@ MIT License - see `LICENSE` file for details
 ## Support
 
 - Report issues on GitHub
-- For premium activation, contact the developer
-- Check the options page for donation links
+- Check the Options page if you’d like to support development (optional, honor system)
 
 ## Changelog
 

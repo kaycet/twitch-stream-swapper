@@ -1,0 +1,63 @@
+stages:
+  - lint
+  - test
+  - package
+  - release
+
+default:
+  image: node:20-bullseye
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
+
+variables:
+  npm_config_loglevel: warn
+
+before_script:
+  - node --version
+  - npm --version
+
+lint:
+  stage: lint
+  script:
+    - npm ci
+    - npm run lint
+
+test:
+  stage: test
+  script:
+    - npm ci
+    - npm run test
+
+package:
+  stage: package
+  script:
+    - npm ci
+    - npm run package
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - dist/*.zip
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs: ["package"]
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - echo "Creating GitLab Release for $CI_COMMIT_TAG"
+  release:
+    name: 'Twitch Stream Swapper $CI_COMMIT_TAG'
+    description: 'Chrome Web Store upload ZIP is available as a pipeline artifact (see Assets links).'
+    tag_name: '$CI_COMMIT_TAG'
+    assets:
+      links:
+        - name: 'Chrome extension ZIP (artifacts)'
+          url: '$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/download?job=package'
+
+

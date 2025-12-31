@@ -2,10 +2,46 @@
  * Background service worker for stream polling and auto-switching
  */
 
+// MV3 service worker is configured as an ES module in manifest.json (`background.type = "module"`),
+// so we can use normal static imports here.
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
-import ErrorMessageManager from './utils/error-messages.js';
+
+function isTwitchUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    return host === 'twitch.tv' || host.endsWith('.twitch.tv') || host === 'twitch.com' || host.endsWith('.twitch.com');
+  } catch {
+    return false;
+  }
+}
+
+function getChannelFromTwitchUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    if (!(host === 'twitch.tv' || host.endsWith('.twitch.tv') || host === 'twitch.com' || host.endsWith('.twitch.com'))) {
+      return null;
+    }
+    const path = u.pathname || '/';
+    const seg = path.split('/').filter(Boolean)[0];
+    if (!seg) return null;
+
+    // Reserved/non-channel routes
+    const reserved = new Set([
+      'directory', 'downloads', 'p', 'videos', 'clips', 'search',
+      'settings', 'subscriptions', 'wallet', 'turbo', 'prime',
+      'inventory', 'drops', 'friends', 'messages', 'moderator',
+      'safety', 'jobs', 'privacy', 'terms'
+    ]);
+    if (reserved.has(seg.toLowerCase())) return null;
+    return seg.toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 class BackgroundWorker {
   constructor() {
@@ -15,9 +51,14 @@ class BackgroundWorker {
     this.isPolling = false;
     this.idleState = 'active';
     this.settings = null;
+    this.snoozeUntil = 0;
+    this._initPromise = null;
   }
 
   async init() {
+    if (this._initPromise) return this._initPromise;
+
+    this._initPromise = (async () => {
     // Load settings
     this.settings = await storage.getSettings();
     
@@ -37,26 +78,36 @@ class BackgroundWorker {
     // Start polling
     this.startPolling();
 
-    // Listen for settings changes
-    chrome.storage.onChanged.addListener((changes) => {
-      if (changes.settings) {
-        this.handleSettingsChange(changes.settings.newValue);
-      }
+    // Set initial badge state
+    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, isLive: false });
+
+    // Prompt-before-switch handlers (optional setting)
+    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+      this.handleSwitchPromptResponse(notificationId, buttonIndex);
     });
 
     // Listen for install/update
     chrome.runtime.onInstalled.addListener(() => {
       this.handleInstall();
     });
+    })();
+
+    return this._initPromise;
+  }
+
+  async forcePollNow() {
+    // Ensure the poller is running and settings are loaded
+    await this.init();
+    // Bypass 5s throttle
+    this.lastPollTime = 0;
+    await this.pollStreams();
   }
 
   async handleInstall() {
-    // Set default settings if first install
-    const settings = await storage.getSettings();
-    if (!settings.clientId) {
-      // Open options page to configure
-      chrome.runtime.openOptionsPage();
-    }
+    // Extension works out of the box with hardcoded Client ID
+    // No need to open options page - it just works!
+    await storage.getSettings();
+    // Client ID is automatically set from defaults, so we're good
   }
 
   async handleSettingsChange(newSettings) {
@@ -70,6 +121,31 @@ class BackgroundWorker {
     // Restart polling with new interval
     this.stopPolling();
     this.startPolling();
+
+    // Update badge immediately when user toggles Auto-Swap in the popup/options.
+    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, isLive: false });
+  }
+
+  updateBadge({ enabled, isLive, target } = {}) {
+    try {
+      if (!chrome?.action) return;
+
+      const on = !!enabled;
+      const live = !!isLive;
+      const text = on ? (live ? 'LIVE' : 'ON') : '';
+      // Use high-contrast colors so the user can tell it's enabled at a glance.
+      const color = on ? '#00dc82' : '#5c5c66';
+      const title = on
+        ? `Auto-Swap ON${target ? ` — Target: ${target}` : ''}`
+        : 'Auto-Swap OFF';
+
+      chrome.action.setBadgeText({ text });
+      chrome.action.setBadgeBackgroundColor({ color });
+      chrome.action.setTitle({ title });
+    } catch (e) {
+      // Non-fatal; badge is just a UX indicator.
+      console.warn('Failed to update badge:', e);
+    }
   }
 
   handleIdleStateChange() {
@@ -113,6 +189,12 @@ class BackgroundWorker {
   }
 
   async pollStreams() {
+    // Ensure modules are loaded
+    if (!storage || !twitchAPI) {
+      console.warn('Modules not loaded yet, skipping poll');
+      return;
+    }
+
     // Prevent concurrent polls
     const now = Date.now();
     if (now - this.lastPollTime < 5000) {
@@ -121,21 +203,42 @@ class BackgroundWorker {
     this.lastPollTime = now;
 
     try {
+      // If Auto-Swap is enabled but the managed tab is missing, disable Auto-Swap.
+      if (this.settings?.redirectEnabled && this.settings?.managedTwitchTabId != null) {
+        const exists = await new Promise((resolve) => {
+          chrome.tabs.get(this.settings.managedTwitchTabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) return resolve(false);
+            return resolve(true);
+          });
+        });
+        if (!exists) {
+          const newSettings = { ...this.settings, redirectEnabled: false, managedTwitchTabId: null };
+          await storage.saveSettings(newSettings);
+          this.settings = newSettings;
+          this.updateBadge({ enabled: false, isLive: false });
+          return;
+        }
+      }
+
       const streams = await storage.getStreams();
       if (streams.length === 0) {
+        this.updateBadge({ enabled: !!this.settings?.redirectEnabled, isLive: false });
         return;
       }
 
       // Sort by priority
-      streams.sort((a, b) => a.priority - b.priority);
+      const prioritized = [...streams].sort((a, b) => a.priority - b.priority);
 
       // Check stream statuses (batch request)
-      const usernames = streams.map(s => s.username);
+      const usernames = prioritized.map(s => s.username);
       const statuses = await twitchAPI.checkStreamsStatus(usernames);
 
       // Find highest priority live stream
       let highestPriorityLive = null;
-      for (const stream of streams) {
+      // Track status updates we want to persist back to storage without clobbering list edits
+      const statusUpdatesByUsername = new Map();
+
+      for (const stream of prioritized) {
         const isLive = statuses[stream.username] !== null;
         
         // Update stream status
@@ -161,14 +264,37 @@ class BackgroundWorker {
         } else if (!isLive) {
           stream.wasLive = false;
         }
+
+        statusUpdatesByUsername.set(stream.username, {
+          isLive: stream.isLive,
+          streamData: stream.streamData,
+          wasLive: stream.wasLive
+        });
       }
 
-      // Save updated stream statuses
-      await storage.saveStreams(streams);
+      // Badge: indicate enabled + whether the current highest priority is live
+      this.updateBadge({
+        enabled: !!this.settings?.redirectEnabled,
+        isLive: !!highestPriorityLive,
+        target: highestPriorityLive?.username || prioritized?.[0]?.username || null
+      });
+
+      // Save updated stream statuses WITHOUT overwriting list edits that might have happened mid-poll
+      // (e.g., user adds/reorders streams while we're awaiting the network call).
+      const latestStreams = await storage.getStreams();
+      for (const s of latestStreams) {
+        const update = statusUpdatesByUsername.get(s.username);
+        if (update) {
+          s.isLive = update.isLive;
+          s.streamData = update.streamData;
+          s.wasLive = update.wasLive;
+        }
+      }
+      await storage.saveStreams(latestStreams);
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
-        await this.handleAutoSwitch(highestPriorityLive, streams);
+        await this.handleAutoSwitch(highestPriorityLive, prioritized);
       }
 
       // Handle category fallback if no streams are live
@@ -184,13 +310,11 @@ class BackgroundWorker {
     } catch (error) {
       console.error('Error polling streams:', error);
       
-      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
-      
       // Handle different error types
       if (error.code === 'AUTH_ERROR' || error.message.includes('Client ID') || error.message.includes('401')) {
-        // Stop polling for auth errors - user needs to fix settings
+        // Stop polling for auth errors (usually token broker/CORS/backend issues in production)
         this.stopPolling();
-        console.error('Authentication error - polling stopped. Please check your Twitch Client ID in settings.');
+        console.error('Authentication error - polling stopped. Verify token broker is online and CORS allows the extension origin.');
       } else if (error.code === 'RATE_LIMIT') {
         // For rate limits, wait longer before retry
         this.stopPolling();
@@ -223,7 +347,7 @@ class BackgroundWorker {
     }
   }
 
-  async handleAutoSwitch(liveStream, allStreams) {
+  async handleAutoSwitch(liveStream) {
     if (!liveStream) {
       return;
     }
@@ -232,60 +356,115 @@ class BackgroundWorker {
     const shouldSwitch = await this.shouldSwitchToStream(liveStream);
 
     if (shouldSwitch) {
-      await this.switchToStream(liveStream);
-      this.currentWatchingStream = liveStream.username;
+      if (this.settings?.promptBeforeSwitch) {
+        await this.promptBeforeSwitch(liveStream);
+      } else {
+        await this.switchToStream(liveStream);
+        this.currentWatchingStream = liveStream.username;
+      }
     }
   }
 
-  async shouldSwitchToStream(stream) {
-    // Don't switch if already watching this stream
-    if (this.currentWatchingStream === stream.username) {
-      return false;
+  async promptBeforeSwitch(stream) {
+    if (Date.now() < this.snoozeUntil) return;
+
+    const notificationId = `tsr_autoswap_${Date.now()}`;
+    await chrome.storage.local.set({
+      pendingSwitch: {
+        notificationId,
+        username: stream.username,
+        createdAt: Date.now()
+      }
+    });
+
+    chrome.notifications.create(notificationId, {
+      type: 'basic',
+      iconUrl: 'icons/icon-128.png',
+      title: 'Auto-Swap ready',
+      message: `Switch to ${stream.username}?`,
+      buttons: [
+        { title: 'Switch' },
+        { title: 'Not now' }
+      ],
+      priority: 2
+    });
+  }
+
+  async handleSwitchPromptResponse(notificationId, buttonIndex) {
+    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
+    if (!pendingSwitch || pendingSwitch.notificationId !== notificationId) return;
+
+    if (buttonIndex === 0) {
+      // Switch
+      await this.switchToStream({ username: pendingSwitch.username });
+      this.currentWatchingStream = pendingSwitch.username;
+    } else {
+      // Snooze prompts for 5 minutes
+      this.snoozeUntil = Date.now() + 5 * 60 * 1000;
     }
 
-    // Get current active tab
+    await chrome.storage.local.remove(['pendingSwitch']);
+    chrome.notifications.clear(notificationId);
+  }
+
+  async shouldSwitchToStream(stream) {
+    // Only manage exactly one Twitch tab (if set)
+    const managedTabId = this.settings?.managedTwitchTabId;
+    if (!managedTabId) return false;
+
+    // Get that specific tab (not the active tab)
     return new Promise((resolve) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs.length === 0) {
+      chrome.tabs.get(managedTabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) {
           resolve(false);
           return;
         }
 
-        const currentTab = tabs[0];
-        
         // Don't switch if tab is not fully loaded
-        if (currentTab.status !== 'complete') {
+        if (tab.status !== 'complete') {
           resolve(false);
           return;
         }
 
-        const currentUrl = currentTab.url || '';
+        const currentUrl = tab.url || '';
+        // Only switch if the managed tab is a Twitch tab (stream page, directory, home, etc.)
+        if (!isTwitchUrl(currentUrl)) {
+          resolve(false);
+          return;
+        }
 
-        // Only switch if:
-        // 1. User is on a Twitch page, OR
-        // 2. User explicitly enabled redirect for all tabs (could be a setting)
-        const isOnTwitch = currentUrl.includes('twitch.tv');
-        
-        // For now, only switch if on Twitch (respectful of user's browsing)
-        // Could add a setting to allow switching from any tab
-        resolve(isOnTwitch);
+        const currentlyWatching = getChannelFromTwitchUrl(currentUrl);
+        this.currentWatchingStream = currentlyWatching;
+
+        // Don't switch if we're already on the target channel page
+        if (currentlyWatching && currentlyWatching === stream.username) {
+          resolve(false);
+          return;
+        }
+
+        resolve(true);
       });
     });
   }
 
   async switchToStream(stream) {
     return new Promise((resolve) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-        if (tabs.length === 0) {
+      const managedTabId = this.settings?.managedTwitchTabId;
+      if (!managedTabId) {
+        resolve(false);
+        return;
+      }
+
+      chrome.tabs.get(managedTabId, async (tab) => {
+        if (chrome.runtime.lastError || !tab) {
           resolve(false);
           return;
         }
 
-        const tab = tabs[0];
         const streamUrl = `https://www.twitch.tv/${stream.username}`;
 
         // Update the tab
-        chrome.tabs.update(tab.id, { url: streamUrl }, () => {
+        chrome.tabs.update(managedTabId, { url: streamUrl }, () => {
           this.currentWatchingStream = stream.username;
           
           // Update analytics
@@ -307,28 +486,21 @@ class BackgroundWorker {
       return;
     }
 
-    // Check if we should use fallback (maybe only if user is on Twitch)
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (tabs.length === 0) return;
+    const managedTabId = this.settings?.managedTwitchTabId;
+    if (!managedTabId) return;
 
-      const currentTab = tabs[0];
-      if (!currentTab.url?.includes('twitch.tv')) {
-        return; // Only use fallback if on Twitch
-      }
+    chrome.tabs.get(managedTabId, async (tab) => {
+      if (chrome.runtime.lastError || !tab) return;
+      if (!isTwitchUrl(tab.url || '')) return; // Only use fallback if the managed tab is a Twitch tab
 
       try {
-        const randomStream = await twitchAPI.getRandomStreamFromCategory(
-          this.settings.fallbackCategory
-        );
-
+        const randomStream = await twitchAPI.getRandomStreamFromCategory(this.settings.fallbackCategory);
         if (randomStream) {
           const streamUrl = `https://www.twitch.tv/${randomStream.user_login}`;
-          chrome.tabs.update(currentTab.id, { url: streamUrl });
+          chrome.tabs.update(managedTabId, { url: streamUrl });
         }
       } catch (error) {
         console.error('Error getting fallback stream:', error);
-        // Don't show error to user for fallback - it's a background operation
-        // Just log it for debugging
       }
     });
   }
@@ -364,5 +536,58 @@ class BackgroundWorker {
 
 // Initialize worker
 const worker = new BackgroundWorker();
-worker.init();
+
+// IMPORTANT: Register message listeners at top-level so MV3 can deliver messages immediately
+// even when the service worker is waking up (before async init completes).
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'TSR_GET_TAB_ID') {
+    sendResponse({ tabId: sender?.tab?.id ?? null });
+    return true;
+  }
+  if (message?.type === 'TSR_FORCE_POLL') {
+    worker.forcePollNow()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
+    return true;
+  }
+  return false;
+});
+
+// Also listen for settings changes at top-level, so badge/polling updates are not delayed
+// by async init ordering.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (!changes.settings?.newValue) return;
+  worker.init()
+    .then(() => worker.handleSettingsChange(changes.settings.newValue))
+    .catch((e) => console.warn('Failed to apply settings change:', e));
+});
+
+// If the managed tab is closed, disable Auto-Swap automatically.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  worker.init()
+    .then(async () => {
+      const managed = worker.settings?.managedTwitchTabId ?? null;
+      if (managed == null) return;
+      if (tabId !== managed) return;
+
+      const newSettings = { ...worker.settings, redirectEnabled: false, managedTwitchTabId: null };
+      await storage.saveSettings(newSettings);
+      worker.settings = newSettings;
+      worker.updateBadge({ enabled: false, isLive: false });
+    })
+    .catch((e) => console.warn('Failed to disable Auto-Swap on tab close:', e));
+});
+
+// Initialize on service worker startup
+worker.init().catch(error => {
+  console.error('Service worker initialization failed:', error);
+});
+
+// Also initialize on install/update
+chrome.runtime.onInstalled.addListener(() => {
+  worker.init().catch(error => {
+    console.error('Service worker initialization failed on install:', error);
+  });
+});
 

@@ -1,18 +1,22 @@
 {
-  "name": "twitch-stream-rotator",
+  "name": "twitch-stream-swapper",
   "version": "1.0.0",
-  "description": "A Chrome extension that automatically rotates between Twitch streams based on priority",
+  "private": true,
+  "description": "Dev tooling (lint/tests/packaging) for the Twitch Stream Swapper Chrome extension.",
+  "type": "module",
   "scripts": {
-    "generate-icons": "node scripts/generate-icons.js"
+    "lint": "eslint .",
+    "test": "vitest run",
+    "package": "node scripts/package-extension.mjs",
+    "ci": "npm run lint && npm run test && npm run package"
   },
-  "keywords": [
-    "chrome-extension",
-    "twitch",
-    "stream-rotation"
-  ],
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
-    "sharp": "^0.33.0"
+    "@eslint/js": "^9.20.0",
+    "archiver": "^7.0.1",
+    "eslint": "^9.20.0",
+    "globals": "^15.14.0",
+    "vitest": "^2.1.8"
   }
 }
+
+

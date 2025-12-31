@@ -1,54 +1,12 @@
-/* Dark Theme - Premium Feature */
-
-body {
-  background: #0a0a0a;
-  color: #e0e0e0;
-}
-
-.container {
-  background: #0a0a0a;
-}
-
-header {
-  background: #121212;
-  border-bottom-color: #1a1a1a;
-}
-
-.stream-item {
-  background: #1a1a1a;
-  border-color: #2a2a2a;
-}
-
-.stream-item:hover {
-  background: #222222;
-  border-color: var(--purple-accent, #9147ff);
-}
-
-#streamInput {
-  background: #1a1a1a;
-  border-color: #2a2a2a;
-  color: #e0e0e0;
-}
-
-.settings-section {
-  background: #121212;
-  border-color: #1a1a1a;
-}
-
-.setting-item input,
-.setting-item select {
-  background: #1a1a1a;
-  border-color: #2a2a2a;
-  color: #e0e0e0;
-}
-
-.footer {
-  background: #121212;
-  border-top-color: #1a1a1a;
-}
-
-.current-stream {
-  background: #121212;
-  border-top-color: #1a1a1a;
+/* Dark Theme - Supporter Feature */
+:root {
+  --bg: #0a0a0a;
+  --panel: #0f0f10;
+  --panel-2: #141416;
+  --border: #232327;
+  --text: #e9e9ee;
+  --muted: #b4b4c0;
+  --purple-accent: #9147ff;
+  --purple-accent-hover: #772ce8;
 }
 

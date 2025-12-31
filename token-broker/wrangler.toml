@@ -1,0 +1,10 @@
+name = "tsr-token-broker"
+main = "cloudflare-worker.js"
+compatibility_date = "2025-12-31"
+
+# Optional: if you want to bind a custom domain/route via config, uncomment and adjust:
+# routes = [
+#   { pattern = "tsr-token-broker.com/*", zone_name = "tsr-token-broker.com" }
+# ]
+
+

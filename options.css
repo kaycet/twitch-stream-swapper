@@ -1,10 +1,16 @@
-/* Override Bulma defaults for dark theme */
+/* Options page styles (local only — no remote CSS dependencies) */
 :root {
   --purple-accent: #9147ff;
   --purple-accent-hover: #772ce8;
+  --bg: #0e0e10;
+  --panel: #18181b;
+  --panel-2: #1f1f23;
+  --border: #2d2d35;
+  --muted: #adadb8;
+  --text: #efeff1;
 }
 
-/* Reset and base styles - work alongside Bulma */
+/* Reset and base styles */
 * {
   margin: 0;
   padding: 0;
@@ -13,44 +19,17 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background: #0e0e10 !important;
-  color: #efeff1 !important;
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.6;
 }
 
-/* Override Bulma's default colors */
-.button.is-primary {
-  background-color: var(--purple-accent) !important;
-  border-color: var(--purple-accent) !important;
-}
-
-.button.is-primary:hover {
-  background-color: var(--purple-accent-hover) !important;
-  border-color: var(--purple-accent-hover) !important;
-}
-
-.input, .textarea, .select select {
-  background-color: #2d2d35 !important;
-  border-color: #3d3d47 !important;
-  color: #efeff1 !important;
-}
-
-.input:focus, .textarea:focus, .select select:focus {
-  border-color: var(--purple-accent) !important;
-  box-shadow: 0 0 0 0.125em rgba(145, 71, 255, 0.25) !important;
-}
-
-.input::placeholder, .textarea::placeholder {
-  color: #5c5c66 !important;
-}
-
-/* Override Bulma link colors */
 a {
-  color: var(--purple-accent) !important;
+  color: var(--purple-accent);
 }
 
 a:hover {
-  color: var(--purple-accent-hover) !important;
+  color: var(--purple-accent-hover);
 }
 
 .container {
@@ -65,13 +44,13 @@ header {
   align-items: center;
   margin-bottom: 30px;
   padding-bottom: 20px;
-  border-bottom: 2px solid #2d2d35;
+  border-bottom: 2px solid var(--border);
 }
 
 header h1 {
   font-size: 28px;
   font-weight: 600;
-  color: #efeff1;
+  color: var(--text);
 }
 
 .back-link {
@@ -92,10 +71,11 @@ header h1 {
 }
 
 .settings-section {
-  background: #18181b;
-  border: 1px solid #2d2d35;
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 24px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.22);
 }
 
 .settings-section h2 {
@@ -109,7 +89,7 @@ header h1 {
 }
 
 .section-description {
-  color: #adadb8;
+  color: var(--muted);
   font-size: 14px;
   margin-bottom: 20px;
 }
@@ -131,9 +111,31 @@ header h1 {
   cursor: pointer;
 }
 
-.setting-item label input[type="checkbox"] {
-  margin-right: 8px;
+.setting-item label input[type="checkbox"],
+.setting-item label input[type="radio"] {
   cursor: pointer;
+}
+
+/* Checkbox / radio rows (aligned like a proper settings toggle row) */
+.toggle-row {
+  flex-direction: row !important;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px !important;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle-row input[type="checkbox"],
+.toggle-row input[type="radio"] {
+  margin: 2px 0 0 0;
+  flex: 0 0 auto;
 }
 
 .setting-item label span:first-of-type {
@@ -142,7 +144,7 @@ header h1 {
 
 .hint {
   font-size: 12px;
-  color: #adadb8;
+  color: var(--muted);
   font-weight: normal;
 }
 
@@ -164,7 +166,7 @@ header h1 {
   background: #2d2d35;
   border: 1px solid #3d3d47;
   border-radius: 4px;
-  color: #efeff1;
+  color: var(--text);
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
@@ -173,7 +175,49 @@ header h1 {
 
 .setting-item input:focus,
 .setting-item select:focus {
-  border-color: var(--purple-accent) !important;
+  border-color: var(--purple-accent);
+  box-shadow: 0 0 0 0.125em rgba(145, 71, 255, 0.25);
+}
+.inline-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.advanced-details {
+  margin-top: 10px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.advanced-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+}
+
+.advanced-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-details > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 10px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.advanced-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced-details[open] {
+  box-shadow: inset 0 0 0 1px rgba(145, 71, 255, 0.12);
 }
 
 .setting-item input::placeholder {
@@ -218,6 +262,50 @@ header h1 {
   margin-top: 16px;
   font-size: 13px;
   color: #efeff1;
+}
+
+.custom-theme-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.color-row {
+  display: grid;
+  grid-template-columns: 110px 44px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.color-label {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.color-row input[type="color"] {
+  width: 44px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hex-input {
+  width: 100% !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.3px;
+}
+
+.input-error {
+  border-color: #e91916 !important;
+  box-shadow: 0 0 0 0.125em rgba(233, 25, 22, 0.18);
 }
 
 .donation-section {
@@ -289,15 +377,6 @@ header h1 {
 
 .btn-donation.kofi:hover {
   background: #e04e4b;
-}
-
-.premium-input-group {
-  display: flex;
-  gap: 8px;
-}
-
-.premium-input-group input {
-  flex: 1;
 }
 
 .actions {

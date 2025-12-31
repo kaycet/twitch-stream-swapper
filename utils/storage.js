@@ -3,6 +3,8 @@
  * Handles Chrome storage API with caching for performance
  */
 
+import { TWITCH_CLIENT_ID } from './config.js';
+
 class StorageManager {
   constructor() {
     this.cache = new Map();
@@ -48,8 +50,8 @@ class StorageManager {
     // Merge with queue
     Object.entries(items).forEach(([key, value]) => {
       this.saveQueue.set(key, value);
-      // Invalidate cache
-      this.cache.delete(key);
+      // Invalidate cache (cache keys are JSON arrays, so just clear to avoid stale overwrites)
+      this.cache.clear();
     });
 
     if (immediate) {
@@ -93,7 +95,8 @@ class StorageManager {
     
     // Remove from cache
     keyArray.forEach(key => {
-      this.cache.delete(key);
+      // Cache keys are JSON arrays; clear to avoid stale reads
+      this.cache.clear();
       this.saveQueue.delete(key);
     });
 
@@ -142,19 +145,42 @@ class StorageManager {
    * @returns {Promise<Object>}
    */
   async getSettings() {
+    // Production: Hardcoded Client ID - works out of the box, no user setup needed!
+    // This should match `utils/config.js` TWITCH_CLIENT_ID
+    const DEFAULT_CLIENT_ID = TWITCH_CLIENT_ID;
+    
     const defaultSettings = {
       checkInterval: 60000, // 1 minute
       fallbackCategory: "Just Chatting",
-      redirectEnabled: true,
+      // Auto-swap OFF by default. Enabling binds to exactly one Twitch tab.
+      redirectEnabled: false,
       promptBeforeSwitch: false, // Default to auto-swap (off)
       notificationsEnabled: false,
       theme: "default",
+      customTheme: {
+        accent: "#9147ff",
+        accentHover: "#772ce8",
+        bg: "#0e0e10",
+        panel: "#18181b",
+        panel2: "#1f1f23",
+        border: "#2d2d35",
+        text: "#efeff1",
+        muted: "#adadb8"
+      },
       premiumStatus: false,
-      clientId: ""
+      clientId: "", // Empty means "use default"
+      managedTwitchTabId: null // When set, auto-swap only affects this single Twitch tab
     };
 
     const settings = await this.get('settings');
-    return { ...defaultSettings, ...settings };
+    const merged = { ...defaultSettings, ...settings };
+    
+    // If user hasn't set a custom Client ID, use the hardcoded default
+    if (!merged.clientId || merged.clientId === "" || merged.clientId === DEFAULT_CLIENT_ID) {
+      merged.clientId = DEFAULT_CLIENT_ID;
+    }
+    
+    return merged;
   }
 
   /**
