@@ -49,10 +49,24 @@ header h1 {
 }
 
 .status-message {
-  padding: 8px 16px;
-  font-size: 12px;
+  padding: 10px 16px;
+  font-size: 13px;
   text-align: center;
   display: none;
+  line-height: 1.4;
+  word-wrap: break-word;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .status-message.show {
@@ -62,16 +76,53 @@ header h1 {
 .status-message.success {
   background: #0e7c0e;
   color: #fff;
+  border-left: 3px solid #0a5f0a;
 }
 
 .status-message.error {
   background: #e91916;
   color: #fff;
+  border-left: 3px solid #c41613;
 }
 
 .status-message.info {
   background: #9147ff;
   color: #fff;
+  border-left: 3px solid #772ce8;
+}
+
+.status-message.warning {
+  background: #ffa500;
+  color: #fff;
+  border-left: 3px solid #e69400;
+}
+
+.status-message.loading {
+  background: #2d2d35;
+  color: #efeff1;
+  border-left: 3px solid #9147ff;
+  position: relative;
+  padding-left: 40px;
+}
+
+.status-message.loading::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid #3d3d47;
+  border-top-color: #9147ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
 }
 
 .stream-list-container {

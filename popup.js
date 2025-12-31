@@ -1,5 +1,6 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
+import ErrorMessageManager from './utils/error-messages.js';
 
 class PopupManager {
   constructor() {
@@ -20,6 +21,7 @@ class PopupManager {
 
   async loadData() {
     try {
+      this.showLoading('loadData');
       this.streams = await storage.getStreams();
       this.settings = await storage.getSettings();
       
@@ -33,9 +35,12 @@ class PopupManager {
 
       // Apply theme
       this.applyTheme();
+      this.hideLoading();
     } catch (error) {
       console.error('Error loading data:', error);
-      this.showMessage('Error loading data', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'loadData');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+      this.hideLoading();
     }
   }
 
@@ -78,14 +83,30 @@ class PopupManager {
   }
 
   async validateUsername(username) {
-    if (!username || username.trim().length === 0) return;
+    if (!username || username.trim().length === 0) {
+      const input = document.getElementById('streamInput');
+      input.style.borderColor = '#3d3d47';
+      return;
+    }
     
-    // Basic validation - alphanumeric, underscores, hyphens
-    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
+    // Basic validation - alphanumeric, underscores
+    const trimmed = username.trim();
+    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(trimmed);
     const input = document.getElementById('streamInput');
     
-    if (!valid && username.trim().length > 0) {
+    if (!valid) {
       input.style.borderColor = '#e91916';
+      // Show helpful validation message using ErrorMessageManager
+      let errorMessage = 'Invalid username format';
+      if (trimmed.length < 4) {
+        errorMessage = 'Username must be at least 4 characters';
+      } else if (trimmed.length > 25) {
+        errorMessage = 'Username must be 25 characters or less';
+      } else if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+        errorMessage = 'Username can only contain letters, numbers, and underscores';
+      }
+      const errorInfo = ErrorMessageManager.getErrorMessage(errorMessage, 'addStream');
+      this.showMessage(errorInfo.message, errorInfo.type);
     } else {
       input.style.borderColor = '#3d3d47';
     }
@@ -94,65 +115,96 @@ class PopupManager {
   async addStream() {
     const input = document.getElementById('streamInput');
     const username = input.value.trim().toLowerCase();
+    const addBtn = document.getElementById('addStreamBtn');
 
     if (!username) {
-      this.showMessage('Please enter a username', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Please enter a username', 'addStream');
+      this.showMessage(errorInfo.message, errorInfo.type);
       return;
     }
 
     // Validate username format
     if (!/^[a-zA-Z0-9_]{4,25}$/.test(username)) {
-      this.showMessage('Invalid username format', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Invalid username format', 'addStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+      input.style.borderColor = '#e91916';
       return;
     }
 
     // Check if already exists
     if (this.streams.some(s => s.username.toLowerCase() === username)) {
-      this.showMessage('Stream already in list', 'error');
+      const errorInfo = ErrorMessageManager.getErrorMessage('Stream already in list', 'addStream');
+      this.showMessage(errorInfo.message, errorInfo.type);
       input.value = '';
+      input.style.borderColor = '#3d3d47';
       return;
     }
 
     // Check free tier limit
     const isPremium = this.settings?.premiumStatus || false;
     if (!isPremium && this.streams.length >= 10) {
-      this.showMessage('Free tier limited to 10 streams. Upgrade for unlimited!', 'info');
-      // Still allow adding but show reminder
+      const errorInfo = ErrorMessageManager.getErrorMessage('Free tier limit reached', 'addStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
       setTimeout(() => {
         chrome.runtime.openOptionsPage();
       }, 2000);
       return;
     }
 
-    // Add stream
-    const newStream = {
-      username: username,
-      priority: this.streams.length + 1,
-      addedAt: Date.now()
-    };
+    try {
+      // Show loading state
+      addBtn.disabled = true;
+      addBtn.textContent = 'Adding...';
+      this.showLoading('addStream');
 
-    this.streams.push(newStream);
-    await storage.saveStreams(this.streams);
-    
-    input.value = '';
-    this.render();
-    this.showMessage(`Added ${username}`, 'success');
-    
-    // Check status immediately
-    this.checkStreamStatuses();
+      // Add stream
+      const newStream = {
+        username: username,
+        priority: this.streams.length + 1,
+        addedAt: Date.now()
+      };
+
+      this.streams.push(newStream);
+      await storage.saveStreams(this.streams);
+      
+      input.value = '';
+      input.style.borderColor = '#3d3d47';
+      this.render();
+      
+      const successInfo = ErrorMessageManager.getSuccessMessage('addStream', { username });
+      this.showMessage(successInfo.message, successInfo.type);
+      
+      // Check status immediately
+      this.checkStreamStatuses();
+    } catch (error) {
+      console.error('Error adding stream:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'addStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Add';
+      this.hideLoading();
+    }
   }
 
   async removeStream(username) {
-    this.streams = this.streams.filter(s => s.username !== username);
-    
-    // Reorder priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+    try {
+      this.streams = this.streams.filter(s => s.username !== username);
+      
+      // Reorder priorities
+      this.streams.forEach((stream, index) => {
+        stream.priority = index + 1;
+      });
 
-    await storage.saveStreams(this.streams);
-    this.render();
-    this.showMessage('Stream removed', 'success');
+      await storage.saveStreams(this.streams);
+      this.render();
+      const successInfo = ErrorMessageManager.getSuccessMessage('removeStream');
+      this.showMessage(successInfo.message, successInfo.type);
+    } catch (error) {
+      console.error('Error removing stream:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'removeStream');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    }
   }
 
   render() {
@@ -278,23 +330,36 @@ class PopupManager {
 
     if (draggedIndex === -1 || targetIndex === -1) return;
 
-    // Remove dragged item
-    const [dragged] = this.streams.splice(draggedIndex, 1);
-    
-    // Insert at target position
-    this.streams.splice(targetIndex, 0, dragged);
+    try {
+      // Remove dragged item
+      const [dragged] = this.streams.splice(draggedIndex, 1);
+      
+      // Insert at target position
+      this.streams.splice(targetIndex, 0, dragged);
 
-    // Update priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+      // Update priorities
+      this.streams.forEach((stream, index) => {
+        stream.priority = index + 1;
+      });
 
-    // Debounced save
-    clearTimeout(this.debounceTimeout);
-    this.debounceTimeout = setTimeout(async () => {
-      await storage.saveStreams(this.streams);
-      this.render();
-    }, 300);
+      // Debounced save
+      clearTimeout(this.debounceTimeout);
+      this.debounceTimeout = setTimeout(async () => {
+        try {
+          await storage.saveStreams(this.streams);
+          this.render();
+          // Don't show success message for reordering - it's too frequent
+        } catch (error) {
+          console.error('Error saving reordered streams:', error);
+          const errorInfo = ErrorMessageManager.getErrorMessage(error, 'reorderStreams');
+          this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+        }
+      }, 300);
+    } catch (error) {
+      console.error('Error reordering streams:', error);
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'reorderStreams');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
+    }
   }
 
   async checkStreamStatuses() {
@@ -308,6 +373,8 @@ class PopupManager {
         await twitchAPI.initialize(this.settings.clientId);
       } catch (error) {
         console.error('Failed to initialize Twitch API:', error);
+        const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
+        this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
         return;
       }
     }
@@ -341,9 +408,8 @@ class PopupManager {
       this.updateCurrentStream();
     } catch (error) {
       console.error('Error checking stream statuses:', error);
-      if (error.message.includes('Client ID')) {
-        this.showMessage('Please configure Twitch Client ID in settings', 'error');
-      }
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
+      this.showMessage(ErrorMessageManager.formatMessage(errorInfo), errorInfo.type);
     }
   }
 
@@ -378,9 +444,25 @@ class PopupManager {
     messageDiv.textContent = text;
     messageDiv.className = `status-message show ${type}`;
 
+    // Show longer for error messages with actions
+    const duration = type === 'error' ? 5000 : 3000;
     setTimeout(() => {
       messageDiv.classList.remove('show');
-    }, 3000);
+    }, duration);
+  }
+
+  showLoading(context) {
+    const messageDiv = document.getElementById('statusMessage');
+    const loadingText = ErrorMessageManager.getLoadingMessage(context);
+    messageDiv.textContent = loadingText;
+    messageDiv.className = 'status-message show loading';
+  }
+
+  hideLoading() {
+    const messageDiv = document.getElementById('statusMessage');
+    if (messageDiv.classList.contains('loading')) {
+      messageDiv.classList.remove('show', 'loading');
+    }
   }
 
   cleanup() {

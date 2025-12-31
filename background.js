@@ -5,6 +5,7 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
+import ErrorMessageManager from './utils/error-messages.js';
 
 class BackgroundWorker {
   constructor() {
@@ -183,17 +184,41 @@ class BackgroundWorker {
     } catch (error) {
       console.error('Error polling streams:', error);
       
-      // Exponential backoff on errors
-      if (error.message.includes('Client ID') || error.message.includes('401')) {
+      const errorInfo = ErrorMessageManager.getErrorMessage(error, 'checkStatus');
+      
+      // Handle different error types
+      if (error.code === 'AUTH_ERROR' || error.message.includes('Client ID') || error.message.includes('401')) {
+        // Stop polling for auth errors - user needs to fix settings
         this.stopPolling();
-      } else {
-        // Temporary backoff
+        console.error('Authentication error - polling stopped. Please check your Twitch Client ID in settings.');
+      } else if (error.code === 'RATE_LIMIT') {
+        // For rate limits, wait longer before retry
+        this.stopPolling();
+        const retryDelay = error.retryAfter ? error.retryAfter * 1000 : 120000; // 2 minutes default
+        setTimeout(() => {
+          if (this.idleState === 'active') {
+            this.startPolling();
+          }
+        }, retryDelay);
+        console.warn('Rate limit hit - will retry after delay');
+      } else if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
+        // Network errors - retry after shorter delay
         this.stopPolling();
         setTimeout(() => {
           if (this.idleState === 'active') {
             this.startPolling();
           }
         }, 60000); // Wait 1 minute before retry
+        console.warn('Network error - will retry in 1 minute');
+      } else {
+        // Other errors - exponential backoff
+        this.stopPolling();
+        setTimeout(() => {
+          if (this.idleState === 'active') {
+            this.startPolling();
+          }
+        }, 60000); // Wait 1 minute before retry
+        console.warn('Error occurred - will retry in 1 minute');
       }
     }
   }
@@ -302,6 +327,8 @@ class BackgroundWorker {
         }
       } catch (error) {
         console.error('Error getting fallback stream:', error);
+        // Don't show error to user for fallback - it's a background operation
+        // Just log it for debugging
       }
     });
   }
