@@ -35,6 +35,9 @@ class PopupManager {
 
       // Apply theme
       this.applyTheme();
+      
+      // Update category fallback widget
+      this.updateCategoryFallbackWidget();
     } catch (error) {
       console.error('Error loading data:', error);
       this.showMessage('Error loading data', 'error');
@@ -68,6 +71,14 @@ class PopupManager {
     document.getElementById('settingsBtn').addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
     });
+
+    // Category fallback settings button
+    const fallbackSettingsBtn = document.getElementById('fallbackSettingsBtn');
+    if (fallbackSettingsBtn) {
+      fallbackSettingsBtn.addEventListener('click', () => {
+        chrome.runtime.openOptionsPage();
+      });
+    }
 
     // Debounced input validation
     let debounceTimeout;
@@ -173,11 +184,13 @@ class PopupManager {
       premiumBadge.style.display = 'none';
     }
 
-    // Clear list
-    listContainer.innerHTML = '';
+    // Remove all stream items but preserve empty state
+    const itemsToRemove = listContainer.querySelectorAll('.stream-item');
+    itemsToRemove.forEach(item => item.remove());
 
     if (this.streams.length === 0) {
       emptyState.style.display = 'block';
+      // Remove drag and drop listeners if any
       return;
     }
 
@@ -191,6 +204,9 @@ class PopupManager {
 
     // Setup drag and drop
     this.setupDragAndDrop();
+    
+    // Update category fallback widget
+    this.updateCategoryFallbackWidget();
   }
 
   createStreamItem(stream, index) {
@@ -412,12 +428,11 @@ class PopupManager {
       stream.priority = index + 1;
     });
 
-    // Debounced save
-    clearTimeout(this.debounceTimeout);
-    this.debounceTimeout = setTimeout(async () => {
-      await storage.saveStreams(this.streams);
-      this.render();
-    }, 300);
+    // Save immediately (no debounce for reordering)
+    await storage.saveStreams(this.streams);
+    
+    // Re-render to update UI
+    this.render();
   }
 
   async checkStreamStatuses() {
@@ -462,6 +477,9 @@ class PopupManager {
 
       // Update current stream display
       this.updateCurrentStream();
+      
+      // Update category fallback widget
+      this.updateCategoryFallbackWidget();
     } catch (error) {
       console.error('Error checking stream statuses:', error);
       if (error.message.includes('Client ID')) {
@@ -483,6 +501,24 @@ class PopupManager {
       currentInfo.textContent = `${liveStream.username} - ${title}`;
     } else {
       currentStreamDiv.style.display = 'none';
+    }
+  }
+
+  updateCategoryFallbackWidget() {
+    const widget = document.getElementById('categoryFallbackWidget');
+    if (!widget) return;
+
+    const categoryName = this.settings?.fallbackCategory || '';
+    const isEnabled = !!categoryName;
+
+    if (isEnabled) {
+      widget.style.display = 'block';
+      const categoryText = widget.querySelector('.fallback-category-name');
+      if (categoryText) {
+        categoryText.textContent = categoryName;
+      }
+    } else {
+      widget.style.display = 'none';
     }
   }
 
