@@ -4,7 +4,7 @@
   "description": "Automatically rotate between Twitch streams based on priority",
   "type": "module",
   "scripts": {
-    "setup": "node scripts/setup-worktree.js || echo 'Setup complete'",
+    "setup": "echo Setup complete - Chrome extension requires no build step",
     "dev": "npx http-server . -p 8080 -o dev.html --cors",
     "test": "echo 'Run manual tests per TESTING.md'",
     "format": "echo 'Formatting not configured - use your IDE formatter'",
