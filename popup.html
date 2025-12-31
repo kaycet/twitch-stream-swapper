@@ -10,7 +10,10 @@
   <div class="container">
     <header>
       <h1>Stream Rotator</h1>
-      <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+      <div class="header-actions">
+        <button id="helpBtn" class="icon-btn" title="Keyboard Shortcuts">?</button>
+        <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+      </div>
     </header>
 
     <div id="statusMessage" class="status-message"></div>
@@ -42,6 +45,35 @@
     <div class="footer">
       <div class="stream-count" id="streamCount">0 streams</div>
       <div class="premium-badge" id="premiumBadge" style="display: none;">⭐ Premium</div>
+    </div>
+  </div>
+
+  <!-- Help Tooltip -->
+  <div id="helpTooltip" class="help-tooltip" style="display: none;">
+    <div class="help-content">
+      <h3>Keyboard Shortcuts</h3>
+      <div class="shortcut-list">
+        <div class="shortcut-item">
+          <span class="shortcut-key">Enter</span>
+          <span class="shortcut-desc">Add stream (when input focused)</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">Ctrl+Enter</span>
+          <span class="shortcut-desc">Add stream</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">Delete</span>
+          <span class="shortcut-desc">Remove selected stream</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">Ctrl+,</span>
+          <span class="shortcut-desc">Open settings</span>
+        </div>
+        <div class="shortcut-item">
+          <span class="shortcut-key">F5</span>
+          <span class="shortcut-desc">Refresh stream status</span>
+        </div>
+      </div>
     </div>
   </div>
 

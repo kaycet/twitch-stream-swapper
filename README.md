@@ -51,8 +51,22 @@ Coming soon! (Once published)
 
 1. Click the extension icon to open the popup
 2. Enter a streamer username in the input field
-3. Click "Add" or press Enter
+3. Click "Add" or press Enter (or Ctrl+Enter from anywhere)
 4. Drag and drop streams to reorder by priority
+
+### Keyboard Shortcuts
+
+Power users can use keyboard shortcuts for faster navigation:
+
+- **Enter** - Add stream (when input field is focused)
+- **Ctrl+Enter** (or Cmd+Enter on Mac) - Add stream from anywhere
+- **Delete** - Remove selected stream
+- **Ctrl+,** (or Cmd+, on Mac) - Open settings
+- **F5** - Refresh stream status
+- **Arrow Up/Down** - Navigate between streams (selects stream for deletion)
+- **Escape** - Close help tooltip
+
+Click the **?** icon in the header to view all available shortcuts.
 
 ### Setting Up Auto-Switching
 
