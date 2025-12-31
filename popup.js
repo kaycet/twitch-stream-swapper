@@ -9,6 +9,8 @@ class PopupManager {
     this.dragOverElement = null;
     this.debounceTimeout = null;
     this.statusCheckInterval = null;
+    this.dragGhost = null;
+    this.dragOffset = { x: 0, y: 0 };
   }
 
   async init() {
@@ -225,20 +227,53 @@ class PopupManager {
 
   setupDragAndDrop() {
     const items = document.querySelectorAll('.stream-item');
+    const listContainer = document.querySelector('.stream-list');
+
+    // Track mouse position during drag for ghost positioning
+    const handleDocumentDragOver = (e) => {
+      if (this.dragGhost && e.clientX !== 0 && e.clientY !== 0) {
+        this.updateDragGhostPosition(e.clientX, e.clientY);
+      }
+    };
 
     items.forEach(item => {
       item.addEventListener('dragstart', (e) => {
         this.draggedElement = item;
         item.classList.add('dragging');
+        listContainer.classList.add('dragging-active');
+        
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/html', item.innerHTML);
+        
+        // Create custom drag ghost
+        this.createDragGhost(item, e);
+        
+        // Calculate offset for ghost positioning
+        const rect = item.getBoundingClientRect();
+        this.dragOffset = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
+        
+        // Add document-level dragover listener for ghost tracking
+        document.addEventListener('dragover', handleDocumentDragOver);
       });
 
       item.addEventListener('dragend', () => {
         item.classList.remove('dragging');
+        listContainer.classList.remove('dragging-active');
+        
+        // Remove drag ghost
+        this.removeDragGhost();
+        
+        // Remove document-level listener
+        document.removeEventListener('dragover', handleDocumentDragOver);
+        
+        // Clean up all drag states
         document.querySelectorAll('.stream-item').forEach(i => {
-          i.classList.remove('drag-over');
+          i.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
         });
+        
         this.draggedElement = null;
         this.dragOverElement = null;
       });
@@ -248,17 +283,41 @@ class PopupManager {
         e.dataTransfer.dropEffect = 'move';
 
         if (this.draggedElement && item !== this.draggedElement) {
-          item.classList.add('drag-over');
+          // Determine drop position (top or bottom half)
+          const rect = item.getBoundingClientRect();
+          const midpoint = rect.top + rect.height / 2;
+          const isAbove = e.clientY < midpoint;
+          
+          // Remove all drag-over classes first
+          item.classList.remove('drag-over-top', 'drag-over-bottom');
+          
+          // Add appropriate class based on position
+          if (isAbove) {
+            item.classList.add('drag-over', 'drag-over-top');
+          } else {
+            item.classList.add('drag-over', 'drag-over-bottom');
+          }
+          
           this.dragOverElement = item;
         }
       });
 
-      item.addEventListener('dragleave', () => {
-        item.classList.remove('drag-over');
+      item.addEventListener('dragenter', (e) => {
+        if (this.draggedElement && item !== this.draggedElement) {
+          item.classList.add('drag-target');
+        }
+      });
+
+      item.addEventListener('dragleave', (e) => {
+        // Only remove if we're actually leaving the element
+        if (!item.contains(e.relatedTarget)) {
+          item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
+        }
       });
 
       item.addEventListener('drop', async (e) => {
         e.preventDefault();
+        e.stopPropagation();
         
         if (this.draggedElement && this.dragOverElement) {
           await this.reorderStreams(
@@ -267,9 +326,73 @@ class PopupManager {
           );
         }
 
-        item.classList.remove('drag-over');
+        item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
       });
     });
+  }
+
+  createDragGhost(sourceElement, dragEvent) {
+    // Clone the element for the ghost
+    const ghost = sourceElement.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    
+    // Get computed styles to match appearance
+    const computedStyle = window.getComputedStyle(sourceElement);
+    ghost.style.width = `${sourceElement.offsetWidth}px`;
+    ghost.style.height = `${sourceElement.offsetHeight}px`;
+    ghost.style.background = computedStyle.background;
+    ghost.style.border = computedStyle.border;
+    ghost.style.borderRadius = computedStyle.borderRadius;
+    ghost.style.padding = computedStyle.padding;
+    ghost.style.display = 'flex';
+    ghost.style.alignItems = 'center';
+    ghost.style.gap = computedStyle.gap;
+    
+    // Remove action buttons from ghost
+    const actionBtns = ghost.querySelectorAll('.stream-actions');
+    actionBtns.forEach(btn => btn.remove());
+    
+    // Position absolutely
+    ghost.style.position = 'fixed';
+    ghost.style.margin = '0';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.zIndex = '10000';
+    
+    document.body.appendChild(ghost);
+    this.dragGhost = ghost;
+    
+    // Set initial position
+    this.updateDragGhostPosition(dragEvent.clientX, dragEvent.clientY);
+    
+    // Hide default drag image
+    const dragImage = document.createElement('div');
+    dragImage.style.position = 'absolute';
+    dragImage.style.top = '-9999px';
+    dragImage.style.width = '1px';
+    dragImage.style.height = '1px';
+    document.body.appendChild(dragImage);
+    dragEvent.dataTransfer.setDragImage(dragImage, 0, 0);
+    
+    // Clean up drag image after a short delay
+    setTimeout(() => {
+      if (dragImage.parentNode) {
+        dragImage.parentNode.removeChild(dragImage);
+      }
+    }, 0);
+  }
+
+  updateDragGhostPosition(x, y) {
+    if (this.dragGhost) {
+      this.dragGhost.style.left = `${x - this.dragOffset.x}px`;
+      this.dragGhost.style.top = `${y - this.dragOffset.y}px`;
+    }
+  }
+
+  removeDragGhost() {
+    if (this.dragGhost) {
+      this.dragGhost.remove();
+      this.dragGhost = null;
+    }
   }
 
   async reorderStreams(draggedUsername, targetUsername) {

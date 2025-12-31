@@ -165,23 +165,76 @@ header h1 {
   border: 1px solid #3d3d47;
   border-radius: 6px;
   cursor: move;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
+  position: relative;
+  transform-origin: center;
 }
 
 .stream-item:hover {
   background: #35353d;
   border-color: #9147ff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(145, 71, 255, 0.2);
 }
 
 .stream-item.dragging {
-  opacity: 0.5;
-  transform: scale(0.98);
+  opacity: 0.4;
+  transform: scale(0.95) rotate(2deg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-color: #9147ff;
+  z-index: 1000;
+  transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .stream-item.drag-over {
   border-color: #9147ff;
-  background: #3d2d55;
+  background: linear-gradient(135deg, #3d2d55 0%, #4a2d66 100%);
+  transform: scale(1.02) translateY(-2px);
+  box-shadow: 0 4px 16px rgba(145, 71, 255, 0.4);
+  border-width: 2px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stream-item.drag-over::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 8px;
+  border: 2px solid #9147ff;
+  animation: dropZonePulse 2s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+@keyframes dropZonePulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.005);
+  }
+}
+
+.stream-item.drag-over-top {
+  border-top-color: #9147ff;
+  border-top-width: 3px;
+}
+
+.stream-item.drag-over-bottom {
+  border-bottom-color: #9147ff;
+  border-bottom-width: 3px;
+}
+
+.stream-item.drag-target {
+  border-color: #9147ff;
+  background: #35353d;
+  box-shadow: 0 2px 8px rgba(145, 71, 255, 0.3);
 }
 
 .stream-handle {
@@ -315,5 +368,27 @@ header h1 {
 
 .stream-list-container::-webkit-scrollbar-thumb:hover {
   background: #5c5c66;
+}
+
+/* Drag ghost styles */
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0.85;
+  transform: rotate(-1.5deg) scale(0.98);
+  transition: transform 0.1s ease-out, opacity 0.1s ease-out;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(145, 71, 255, 0.3);
+  border: 2px solid #9147ff;
+  filter: brightness(1.1);
+}
+
+/* Smooth transitions for drag states */
+.stream-list.dragging-active .stream-item:not(.dragging) {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stream-list.dragging-active .stream-item:not(.dragging):hover {
+  transform: translateY(0);
 }
 

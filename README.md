@@ -5,7 +5,8 @@ A Chrome extension that automatically rotates between Twitch streams based on pr
 ## Features
 
 ### Core Features
-- **Priority-based Stream Rotation**: Drag-and-drop interface to prioritize your favorite streamers
+- **Priority-based Stream Rotation**: Drag-and-drop interface to prioritize your favorite streamers with smooth visual feedback
+- **Enhanced Drag-and-Drop**: Visual ghost preview, drop zone highlighting, and smooth animations for intuitive reordering
 - **Auto-Switching**: Automatically redirects to the highest priority live stream
 - **Category Fallback**: When no streams in your list are live, shows a random stream from a selected category
 - **Real-time Status**: Live/offline indicators for all streams in your list
@@ -53,6 +54,8 @@ Coming soon! (Once published)
 2. Enter a streamer username in the input field
 3. Click "Add" or press Enter
 4. Drag and drop streams to reorder by priority
+   - Visual feedback shows drop zones and a ghost preview while dragging
+   - Smooth animations make reordering intuitive and clear
 
 ### Setting Up Auto-Switching
 
