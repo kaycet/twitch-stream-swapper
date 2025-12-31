@@ -48,6 +48,8 @@ npm ci
 
 Coming soon! (Once published)
 
+If you’re getting ready to publish, see `CHROME_STORE.md` for a step-by-step checklist and listing copy.
+
 ## Usage
 
 ### Adding Streams
