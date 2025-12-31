@@ -15,6 +15,7 @@ class PopupManager {
     await this.loadData();
     this.setupEventListeners();
     this.render();
+    this.updateConnectionStatus();
     this.startStatusPolling();
   }
 
@@ -74,6 +75,33 @@ class PopupManager {
       debounceTimeout = setTimeout(() => {
         this.validateUsername(e.target.value);
       }, 300);
+    });
+
+    // Twitch connection toggle
+    document.getElementById('toggleConnectionBtn').addEventListener('click', () => {
+      this.toggleConnectionSection();
+    });
+
+    // Connect button
+    document.getElementById('connectBtn').addEventListener('click', () => {
+      this.connectTwitch();
+    });
+
+    // Disconnect button
+    document.getElementById('disconnectBtn').addEventListener('click', () => {
+      this.disconnectTwitch();
+    });
+
+    // Test connection button
+    document.getElementById('testConnectionBtn').addEventListener('click', () => {
+      this.testConnection();
+    });
+
+    // Enter key in Client ID input
+    document.getElementById('clientIdInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        this.connectTwitch();
+      }
     });
   }
 
@@ -384,6 +412,132 @@ class PopupManager {
     setTimeout(() => {
       messageDiv.classList.remove('show');
     }, 3000);
+  }
+
+  toggleConnectionSection() {
+    const content = document.getElementById('connectionContent');
+    const toggleBtn = document.getElementById('toggleConnectionBtn');
+    const isVisible = content.style.display !== 'none';
+    
+    content.style.display = isVisible ? 'none' : 'block';
+    toggleBtn.textContent = isVisible ? '▼' : '▲';
+  }
+
+  updateConnectionStatus() {
+    const hasClientId = !!this.settings?.clientId;
+    const indicator = document.getElementById('connectionIndicator');
+    const statusText = document.getElementById('connectionStatusText');
+    const inputGroup = document.getElementById('connectionInputGroup');
+    const actions = document.getElementById('connectionActions');
+    const clientIdInput = document.getElementById('clientIdInput');
+
+    if (hasClientId) {
+      indicator.classList.add('connected');
+      statusText.textContent = 'Connected';
+      inputGroup.style.display = 'none';
+      actions.style.display = 'flex';
+      clientIdInput.value = this.settings.clientId;
+    } else {
+      indicator.classList.remove('connected');
+      statusText.textContent = 'Not Connected';
+      inputGroup.style.display = 'flex';
+      actions.style.display = 'none';
+      clientIdInput.value = '';
+    }
+  }
+
+  async connectTwitch() {
+    const clientIdInput = document.getElementById('clientIdInput');
+    const clientId = clientIdInput.value.trim();
+
+    if (!clientId) {
+      this.showMessage('Please enter a Twitch Client ID', 'error');
+      return;
+    }
+
+    // Validate format (basic check)
+    if (clientId.length < 10) {
+      this.showMessage('Invalid Client ID format', 'error');
+      return;
+    }
+
+    try {
+      // Initialize and test the API
+      await twitchAPI.initialize(clientId);
+      
+      // Test the connection by making a simple API call
+      try {
+        await twitchAPI.getCategoryId('Just Chatting');
+      } catch (error) {
+        this.showMessage('Invalid Client ID. Please check your settings.', 'error');
+        return;
+      }
+
+      // Save to settings
+      this.settings = this.settings || {};
+      this.settings.clientId = clientId;
+      await storage.saveSettings(this.settings);
+
+      // Update UI
+      this.updateConnectionStatus();
+      this.showMessage('Twitch account connected successfully!', 'success');
+
+      // Check stream statuses immediately
+      this.checkStreamStatuses();
+    } catch (error) {
+      console.error('Error connecting Twitch:', error);
+      this.showMessage('Failed to connect: ' + error.message, 'error');
+    }
+  }
+
+  async disconnectTwitch() {
+    if (!confirm('Are you sure you want to disconnect your Twitch account?')) {
+      return;
+    }
+
+    try {
+      this.settings = this.settings || {};
+      this.settings.clientId = '';
+      await storage.saveSettings(this.settings);
+
+      // Clear Twitch API
+      twitchAPI.clientId = null;
+      twitchAPI.clearCache();
+
+      // Update UI
+      this.updateConnectionStatus();
+      this.showMessage('Twitch account disconnected', 'info');
+
+      // Clear stream statuses
+      this.streams.forEach(stream => {
+        stream.isLive = false;
+        stream.streamData = null;
+      });
+      this.render();
+    } catch (error) {
+      console.error('Error disconnecting Twitch:', error);
+      this.showMessage('Failed to disconnect', 'error');
+    }
+  }
+
+  async testConnection() {
+    if (!this.settings?.clientId) {
+      this.showMessage('No Client ID configured', 'error');
+      return;
+    }
+
+    try {
+      this.showMessage('Testing connection...', 'info');
+      
+      // Test the connection
+      await twitchAPI.initialize(this.settings.clientId);
+      await twitchAPI.getCategoryId('Just Chatting');
+      
+      this.showMessage('Connection test successful!', 'success');
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      this.showMessage('Connection test failed: ' + error.message, 'error');
+    }
   }
 
   cleanup() {

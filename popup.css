@@ -107,6 +107,115 @@ header h1 {
   color: #fff !important;
 }
 
+.twitch-connection-section {
+  background: #1f1f23;
+  border-bottom: 1px solid #2d2d35;
+  padding: 12px 16px;
+}
+
+.connection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #efeff1;
+}
+
+.connection-status .status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5c5c66;
+}
+
+.connection-status .status-indicator.connected {
+  background: #0e7c0e;
+  animation: pulse 2s infinite;
+}
+
+.connection-content {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2d2d35;
+}
+
+.connection-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.connection-hint {
+  font-size: 12px;
+  color: #adadb8;
+  line-height: 1.4;
+}
+
+.connection-hint a {
+  color: #9147ff;
+  text-decoration: none;
+}
+
+.connection-hint a:hover {
+  text-decoration: underline;
+}
+
+.connection-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.connection-input-group #clientIdInput {
+  flex: 1;
+  padding: 8px 12px;
+  background: #2d2d35;
+  border: 1px solid #3d3d47;
+  border-radius: 4px;
+  color: #efeff1;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.connection-input-group #clientIdInput:focus {
+  border-color: #9147ff;
+}
+
+.connection-input-group #clientIdInput::placeholder {
+  color: #adadb8;
+}
+
+.connection-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.btn-secondary {
+  background: #3d3d47;
+  color: #efeff1;
+}
+
+.btn-secondary:hover {
+  background: #5c5c66;
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
 .stream-list-container {
   flex: 1;
   overflow-y: auto;
