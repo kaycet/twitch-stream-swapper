@@ -1,157 +1,177 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
+/* Dark theme overrides for Bulma */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background: #0e0e10;
   color: #efeff1;
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
+/* Container spacing */
 .container {
-  max-width: 800px;
-  margin: 0 auto;
   padding: 20px;
 }
 
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 2px solid #2d2d35;
+.section {
+  padding: 1.5rem 0;
 }
 
-header h1 {
-  font-size: 28px;
-  font-weight: 600;
+/* Navbar dark theme */
+.navbar.is-dark {
+  background-color: #18181b;
+  border-bottom: 2px solid #2d2d35;
+  margin-bottom: 30px;
+}
+
+.navbar.is-dark .navbar-item,
+.navbar.is-dark .navbar-brand .navbar-item {
   color: #efeff1;
 }
 
-.back-link {
+.navbar.is-dark .button.is-text {
   color: #9147ff;
-  text-decoration: none;
-  font-size: 14px;
-  transition: color 0.2s;
 }
 
-.back-link:hover {
+.navbar.is-dark .button.is-text:hover {
+  background-color: rgba(145, 71, 255, 0.1);
   color: #772ce8;
 }
 
-.content {
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-}
-
-.settings-section {
-  background: #18181b;
+/* Card dark theme */
+.card {
+  background-color: #18181b;
   border: 1px solid #2d2d35;
-  border-radius: 8px;
-  padding: 24px;
+  box-shadow: none;
+  margin-bottom: 1.5rem;
 }
 
-.settings-section h2 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 16px;
+.card-header {
+  background-color: #1a1a1d;
+  border-bottom: 1px solid #2d2d35;
+}
+
+.card-header-title {
   color: #efeff1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
-.section-description {
-  color: #adadb8;
-  font-size: 14px;
-  margin-bottom: 20px;
-}
-
-.setting-item {
-  margin-bottom: 20px;
-}
-
-.setting-item:last-child {
-  margin-bottom: 0;
-}
-
-.setting-item label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 14px;
+.card-content {
   color: #efeff1;
-  cursor: pointer;
 }
 
-.setting-item label input[type="checkbox"] {
-  margin-right: 8px;
-  cursor: pointer;
+/* Box dark theme */
+.box {
+  background-color: #18181b;
+  border: 1px solid #2d2d35;
+  box-shadow: none;
+  margin-bottom: 1.5rem;
 }
 
-.setting-item label span:first-of-type {
-  font-weight: 500;
+.box.has-background-dark {
+  background-color: #2d2d35;
+  border: 1px solid #3d3d47;
 }
 
-.hint {
-  font-size: 12px;
+/* Form controls dark theme */
+.input,
+.select select,
+.textarea {
+  background-color: #2d2d35;
+  border-color: #3d3d47;
+  color: #efeff1;
+}
+
+.input:focus,
+.input.is-focused,
+.select select:focus,
+.select select.is-focused,
+.textarea:focus,
+.textarea.is-focused {
+  border-color: #9147ff;
+  box-shadow: 0 0 0 0.125em rgba(145, 71, 255, 0.25);
+}
+
+.input::placeholder {
+  color: #5c5c66;
+}
+
+.select:not(.is-multiple):not(.is-loading)::after {
+  border-color: #efeff1;
+}
+
+/* Labels and help text */
+.label {
+  color: #efeff1;
+}
+
+.help {
   color: #adadb8;
-  font-weight: normal;
 }
 
-.hint a {
+.help a {
   color: #9147ff;
   text-decoration: none;
 }
 
-.hint a:hover {
+.help a:hover {
   text-decoration: underline;
 }
 
-.setting-item input[type="text"],
-.setting-item input[type="number"],
-.setting-item input[type="url"],
-.setting-item select {
-  padding: 10px 12px;
-  background: #2d2d35;
-  border: 1px solid #3d3d47;
-  border-radius: 4px;
+/* Checkbox dark theme */
+.checkbox {
   color: #efeff1;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-  width: 100%;
 }
 
-.setting-item input:focus,
-.setting-item select:focus {
-  border-color: #9147ff;
+.checkbox input[type="checkbox"] {
+  margin-right: 0.5em;
 }
 
-.setting-item input::placeholder {
-  color: #5c5c66;
+/* Buttons dark theme */
+.button.is-primary {
+  background-color: #9147ff;
+  border-color: transparent;
+  color: #fff;
 }
 
-.unit {
-  font-size: 12px;
-  color: #adadb8;
-  margin-top: 4px;
-  display: block;
+.button.is-primary:hover {
+  background-color: #772ce8;
 }
 
+.button.is-dark {
+  background-color: #2d2d35;
+  border-color: #3d3d47;
+  color: #efeff1;
+}
+
+.button.is-dark:hover {
+  background-color: #35353d;
+}
+
+.button.is-danger {
+  background-color: #ff5e5b;
+}
+
+.button.is-danger:hover {
+  background-color: #e04e4b;
+}
+
+.button.is-success {
+  background-color: #0e7c0e;
+}
+
+.button.is-success:hover {
+  background-color: #0a5f0a;
+}
+
+/* Premium section styling */
 .premium-section {
-  border-color: #9147ff;
   background: linear-gradient(135deg, #18181b 0%, #1a1525 100%);
+  border-color: #9147ff;
 }
 
-.premium-badge {
-  color: #ffd700;
-  font-size: 16px;
+.premium-section .title {
+  color: #efeff1;
+}
+
+.premium-section .subtitle {
+  color: #adadb8;
 }
 
 .premium-feature {
@@ -167,166 +187,74 @@ header h1 {
   color: #ffd700;
 }
 
-.premium-reminder {
-  background: #2d1a3d;
+/* Notification dark theme */
+.notification {
+  background-color: #2d1a3d;
   border: 1px solid #9147ff;
-  border-radius: 4px;
-  padding: 12px;
-  margin-top: 16px;
-  font-size: 13px;
   color: #efeff1;
 }
 
+.notification.is-info.is-light {
+  background-color: #2d1a3d;
+  color: #efeff1;
+}
+
+.notification .delete {
+  background-color: rgba(239, 239, 241, 0.2);
+}
+
+.notification .delete:hover {
+  background-color: rgba(239, 239, 241, 0.3);
+}
+
+/* Donation section */
 .donation-section {
   background: linear-gradient(135deg, #18181b 0%, #1a2525 100%);
   border-color: #0e7c0e;
 }
 
 .donation-links {
-  margin-bottom: 24px;
+  margin-bottom: 1.5rem;
 }
 
-.donation-buttons {
-  display: flex;
-  gap: 12px;
-  margin-top: 16px;
-  flex-wrap: wrap;
-}
-
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  outline: none;
-  text-decoration: none;
-  display: inline-block;
-}
-
-.btn-primary {
-  background: #9147ff;
-  color: #fff;
-}
-
-.btn-primary:hover {
-  background: #772ce8;
-}
-
-.btn-secondary {
-  background: #2d2d35;
+/* Content and titles */
+.content {
   color: #efeff1;
-  border: 1px solid #3d3d47;
 }
 
-.btn-secondary:hover {
-  background: #35353d;
+.content h1,
+.content h2,
+.content h3,
+.content h4,
+.content h5,
+.content h6 {
+  color: #efeff1;
 }
 
-.btn-large {
-  padding: 14px 28px;
-  font-size: 16px;
+.title {
+  color: #efeff1;
 }
 
-.btn-donation {
-  background: #0e7c0e;
-  color: #fff;
-  font-weight: 600;
-}
-
-.btn-donation:hover {
-  background: #0a5f0a;
-}
-
-.btn-donation.kofi {
-  background: #ff5e5b;
-}
-
-.btn-donation.kofi:hover {
-  background: #e04e4b;
-}
-
-.premium-input-group {
-  display: flex;
-  gap: 8px;
-}
-
-.premium-input-group input {
-  flex: 1;
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
-}
-
-.save-status {
-  font-size: 14px;
-  min-height: 20px;
-}
-
-.save-status.success {
-  color: #0e7c0e;
-}
-
-.save-status.error {
-  color: #e91916;
-}
-
-.analytics-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.stat-item {
-  background: #2d2d35;
-  padding: 16px;
-  border-radius: 4px;
-  border: 1px solid #3d3d47;
-}
-
-.stat-label {
-  display: block;
-  font-size: 12px;
+.subtitle {
   color: #adadb8;
-  margin-bottom: 8px;
 }
 
-.stat-value {
-  display: block;
-  font-size: 24px;
-  font-weight: 600;
-  color: #9147ff;
+.heading {
+  color: #adadb8;
 }
 
-.viewing-time {
-  margin-top: 24px;
-}
-
-.viewing-time h3 {
-  font-size: 16px;
-  margin-bottom: 12px;
-  color: #efeff1;
-}
-
+/* Analytics stats */
 .viewing-time-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .viewing-time-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
+  padding: 0.75rem;
   background: #2d2d35;
   border-radius: 4px;
   border: 1px solid #3d3d47;
@@ -340,5 +268,33 @@ header h1 {
 .viewing-time-duration {
   color: #9147ff;
   font-weight: 600;
+}
+
+/* Save status */
+.save-status {
+  font-size: 14px;
+  min-height: 20px;
+  margin-top: 0.5rem;
+}
+
+.save-status.success {
+  color: #0e7c0e;
+}
+
+.save-status.error {
+  color: #e91916;
+}
+
+/* Tag styling */
+.tag.is-warning {
+  background-color: #ffd700;
+  color: #000;
+}
+
+/* HR styling */
+hr {
+  background-color: #2d2d35;
+  height: 1px;
+  margin: 1.5rem 0;
 }
 
