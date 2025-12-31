@@ -61,6 +61,7 @@ class OptionsManager {
     document.getElementById('clientId').value = this.settings.clientId || '';
     document.getElementById('checkInterval').value = this.settings.checkInterval || 60000;
     document.getElementById('redirectEnabled').checked = this.settings.redirectEnabled !== false;
+    document.getElementById('promptBeforeSwitch').checked = this.settings.promptBeforeSwitch || false;
     document.getElementById('fallbackCategory').value = this.settings.fallbackCategory || 'Just Chatting';
     document.getElementById('fallbackEnabled').checked = !!this.settings.fallbackCategory;
 
@@ -147,6 +148,7 @@ class OptionsManager {
         clientId: document.getElementById('clientId').value.trim(),
         checkInterval: parseInt(document.getElementById('checkInterval').value) || 60000,
         redirectEnabled: document.getElementById('redirectEnabled').checked,
+        promptBeforeSwitch: document.getElementById('promptBeforeSwitch').checked,
         fallbackCategory: document.getElementById('fallbackEnabled').checked 
           ? document.getElementById('fallbackCategory').value.trim() 
           : '',

@@ -14,6 +14,7 @@ class BackgroundWorker {
     this.isPolling = false;
     this.idleState = 'active';
     this.settings = null;
+    this.pendingSwitch = null; // Store pending switch when prompting
   }
 
   async init() {
@@ -46,6 +47,29 @@ class BackgroundWorker {
     // Listen for install/update
     chrome.runtime.onInstalled.addListener(() => {
       this.handleInstall();
+    });
+
+    // Listen for notification button clicks (global listener for all notifications)
+    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+      // Check if this is a switch prompt notification
+      if (this.pendingSwitch && this.pendingSwitch.notificationId === notificationId) {
+        if (buttonIndex === 0) {
+          // User clicked "Switch"
+          this.confirmSwitch();
+        } else if (buttonIndex === 1) {
+          // User clicked "Cancel"
+          this.cancelSwitch();
+        }
+      }
+    });
+
+    // Listen for notification clicks (global listener for all notifications)
+    chrome.notifications.onClicked.addListener((notificationId) => {
+      // Check if this is a switch prompt notification
+      if (this.pendingSwitch && this.pendingSwitch.notificationId === notificationId) {
+        // Default to switching if user clicks notification body
+        this.confirmSwitch();
+      }
     });
   }
 
@@ -207,8 +231,105 @@ class BackgroundWorker {
     const shouldSwitch = await this.shouldSwitchToStream(liveStream);
 
     if (shouldSwitch) {
-      await this.switchToStream(liveStream);
-      this.currentWatchingStream = liveStream.username;
+      // Check if prompting is enabled
+      if (this.settings?.promptBeforeSwitch) {
+        await this.promptForSwitch(liveStream);
+      } else {
+        // Auto-switch (default behavior)
+        await this.switchToStream(liveStream);
+        this.currentWatchingStream = liveStream.username;
+      }
+    }
+  }
+
+  async promptForSwitch(stream) {
+    // Don't prompt if there's already a pending switch for this stream
+    if (this.pendingSwitch && this.pendingSwitch.username === stream.username) {
+      return;
+    }
+
+    // Clear any existing pending switch
+    if (this.pendingSwitch) {
+      await this.clearPendingSwitch();
+    }
+
+    // Store pending switch
+    this.pendingSwitch = {
+      username: stream.username,
+      streamData: stream.streamData,
+      notificationId: `switch-prompt-${stream.username}-${Date.now()}`
+    };
+
+    try {
+      const notificationId = this.pendingSwitch.notificationId;
+      const streamTitle = stream.streamData?.title || 'Live';
+      const gameName = stream.streamData?.game_name || 'Unknown';
+
+      // Show notification with buttons
+      await chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: stream.streamData?.thumbnail_url?.replace('{width}x{height}', '128x128') || 'icons/icon-128.png',
+        title: `Switch to ${stream.username}?`,
+        message: `${streamTitle} - ${gameName}`,
+        buttons: [
+          { title: 'Switch' },
+          { title: 'Cancel' }
+        ],
+        requireInteraction: true
+      });
+
+      // Auto-cancel after 30 seconds if no response
+      setTimeout(() => {
+        if (this.pendingSwitch && this.pendingSwitch.notificationId === notificationId) {
+          this.cancelSwitch();
+        }
+      }, 30000);
+
+    } catch (error) {
+      console.error('Error showing switch prompt:', error);
+      // Fallback to auto-switch on error
+      await this.switchToStream(stream);
+      this.currentWatchingStream = stream.username;
+      this.pendingSwitch = null;
+    }
+  }
+
+  async confirmSwitch() {
+    if (!this.pendingSwitch) {
+      return;
+    }
+
+    const stream = {
+      username: this.pendingSwitch.username,
+      streamData: this.pendingSwitch.streamData
+    };
+
+    const notificationId = this.pendingSwitch.notificationId;
+
+    // Clear notification
+    await chrome.notifications.clear(notificationId);
+    await this.clearPendingSwitch();
+
+    // Perform the switch
+    await this.switchToStream(stream);
+    this.currentWatchingStream = stream.username;
+  }
+
+  async cancelSwitch() {
+    if (!this.pendingSwitch) {
+      return;
+    }
+
+    const notificationId = this.pendingSwitch.notificationId;
+
+    // Clear notification
+    await chrome.notifications.clear(notificationId);
+    await this.clearPendingSwitch();
+  }
+
+  async clearPendingSwitch() {
+    if (this.pendingSwitch) {
+      this.pendingSwitch = null;
     }
   }
 

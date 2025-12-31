@@ -146,6 +146,7 @@ class StorageManager {
       checkInterval: 60000, // 1 minute
       fallbackCategory: "Just Chatting",
       redirectEnabled: true,
+      promptBeforeSwitch: false, // Default to auto-swap (off)
       notificationsEnabled: false,
       theme: "default",
       premiumStatus: false,
