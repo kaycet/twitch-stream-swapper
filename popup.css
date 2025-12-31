@@ -441,6 +441,15 @@ header h1 {
   font-weight: 600;
 }
 
+.made-with-love {
+  text-align: center;
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #5c5c66;
+  background: #1f1f23;
+  border-top: 1px solid #2d2d35;
+}
+
 /* Scrollbar styling */
 .stream-list-container::-webkit-scrollbar {
   width: 8px;

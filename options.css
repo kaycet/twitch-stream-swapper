@@ -385,3 +385,12 @@ header h1 {
   font-weight: 600;
 }
 
+.made-with-love {
+  text-align: center;
+  padding: 20px;
+  font-size: 13px;
+  color: #5c5c66;
+  margin-top: 30px;
+  border-top: 1px solid #2d2d35;
+}
+
