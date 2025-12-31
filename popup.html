@@ -4,15 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Twitch Stream Rotator</title>
-  <link rel="stylesheet" href="https://unpkg.com/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>Stream Rotator</h1>
-      <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
-    </header>
+    <nav class="navbar" role="navigation">
+      <div class="navbar-brand navbar-brand-expanded">
+        <h1 class="navbar-item title is-5 navbar-title">Stream Rotator</h1>
+      </div>
+      <div class="navbar-end">
+        <div class="navbar-item">
+          <button id="settingsBtn" class="button is-ghost" title="Settings">⚙️</button>
+        </div>
+      </div>
+    </nav>
 
     <div id="statusMessage" class="status-message"></div>
 
@@ -53,13 +59,20 @@
 
     <div class="stream-list-container">
       <div class="add-stream-section">
-        <input 
-          type="text" 
-          id="streamInput" 
-          placeholder="Enter streamer username..."
-          autocomplete="off"
-        >
-        <button id="addStreamBtn" class="btn btn-primary">Add</button>
+        <div class="field has-addons">
+          <div class="control is-expanded">
+            <input 
+              class="input" 
+              type="text" 
+              id="streamInput" 
+              placeholder="Enter streamer username..."
+              autocomplete="off"
+            >
+          </div>
+          <div class="control">
+            <button id="addStreamBtn" class="button is-primary">Add</button>
+          </div>
+        </div>
       </div>
 
       <div id="streamList" class="stream-list">

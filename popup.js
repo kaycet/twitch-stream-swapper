@@ -113,9 +113,9 @@ class PopupManager {
     const input = document.getElementById('streamInput');
     
     if (!valid && username.trim().length > 0) {
-      input.style.borderColor = '#e91916';
+      input.classList.add('is-danger');
     } else {
-      input.style.borderColor = '#3d3d47';
+      input.classList.remove('is-danger');
     }
   }
 
@@ -222,7 +222,7 @@ class PopupManager {
 
   createStreamItem(stream, index) {
     const item = document.createElement('div');
-    item.className = 'stream-item';
+    item.className = 'stream-item card';
     item.draggable = true;
     item.dataset.username = stream.username;
     item.dataset.priority = stream.priority;
@@ -230,16 +230,26 @@ class PopupManager {
     const isLive = stream.isLive || false;
 
     item.innerHTML = `
-      <div class="stream-handle">☰</div>
-      <div class="stream-info">
-        <div class="stream-username">${stream.username}</div>
-        <div class="stream-status">
-          <span class="status-indicator ${isLive ? 'live' : ''}"></span>
-          <span>${isLive ? 'Live' : 'Offline'}</span>
+      <div class="card-content">
+        <div class="media">
+          <div class="media-left">
+            <div class="stream-handle">☰</div>
+          </div>
+          <div class="media-content">
+            <div class="stream-info">
+              <p class="stream-username title is-6">${stream.username}</p>
+              <p class="stream-status subtitle is-7">
+                <span class="status-indicator ${isLive ? 'live' : ''}"></span>
+                <span>${isLive ? 'Live' : 'Offline'}</span>
+              </p>
+            </div>
+          </div>
+          <div class="media-right">
+            <div class="stream-actions">
+              <button class="button is-ghost is-small" data-action="remove" title="Remove">×</button>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="stream-actions">
-        <button class="action-btn" data-action="remove" title="Remove">×</button>
       </div>
     `;
 

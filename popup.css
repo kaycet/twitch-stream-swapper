@@ -1,7 +1,18 @@
-/* Override Bulma defaults for dark theme */
+/* Override Bulma variables for dark theme */
 :root {
   --purple-accent: #9147ff;
   --purple-accent-hover: #772ce8;
+  --bulma-scheme-main: #18181b;
+  --bulma-scheme-main-bis: #1f1f23;
+  --bulma-scheme-main-ter: #2d2d35;
+  --bulma-background: #18181b;
+  --bulma-border: #3d3d47;
+  --bulma-text: #efeff1;
+  --bulma-text-weak: #adadb8;
+  --bulma-primary: #9147ff;
+  --bulma-primary-hover: #772ce8;
+  --bulma-success: #0e7c0e;
+  --bulma-danger: #e91916;
 }
 
 /* Reset and base styles - work alongside Bulma */
@@ -51,36 +62,49 @@ body {
   height: 100%;
 }
 
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  background: #1f1f23;
+/* Override Bulma navbar for dark theme */
+.navbar {
+  background-color: #1f1f23 !important;
   border-bottom: 1px solid #2d2d35;
+  padding: 0.75rem 1rem;
+  min-height: auto;
 }
 
-header h1 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #efeff1;
+.navbar-brand-expanded {
+  flex: 1;
 }
 
-.icon-btn {
+.navbar-title {
+  margin: 0 !important;
+  color: #efeff1 !important;
+}
+
+.navbar-item {
+  color: #efeff1 !important;
+  padding: 0.5rem 0.75rem;
+}
+
+.navbar-item.title {
+  color: #efeff1 !important;
+  margin: 0;
+}
+
+.navbar-item .button.is-ghost {
   background: transparent;
   border: none;
   color: #efeff1;
   font-size: 18px;
-  cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
   transition: background 0.2s;
 }
 
-.icon-btn:hover {
+.navbar-item .button.is-ghost:hover {
   background: #2d2d35;
+  color: #efeff1;
 }
 
+/* Status message */
 .status-message {
   padding: 8px 16px;
   font-size: 12px;
@@ -216,6 +240,7 @@ header h1 {
   transform: scale(0.98);
 }
 
+/* Stream list container */
 .stream-list-container {
   flex: 1;
   overflow-y: auto;
@@ -223,40 +248,32 @@ header h1 {
 }
 
 .add-stream-section {
-  display: flex;
-  gap: 8px;
   margin-bottom: 16px;
 }
 
-#streamInput {
-  flex: 1;
-  padding: 10px 12px;
-  background: #2d2d35;
-  border: 1px solid #3d3d47;
-  border-radius: 4px;
-  color: #efeff1;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
+/* Override Bulma input for dark theme */
+.input {
+  background-color: #2d2d35 !important;
+  border-color: #3d3d47 !important;
+  color: #efeff1 !important;
 }
 
-#streamInput:focus {
+.input:focus {
   border-color: var(--purple-accent) !important;
+  box-shadow: 0 0 0 0.125em rgba(145, 71, 255, 0.25) !important;
 }
 
-#streamInput::placeholder {
-  color: #adadb8;
+.input::placeholder {
+  color: #adadb8 !important;
 }
 
-.btn {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  outline: none;
+.input.is-danger {
+  border-color: #e91916 !important;
+}
+
+.input.is-danger:focus {
+  border-color: #e91916 !important;
+  box-shadow: 0 0 0 0.125em rgba(233, 25, 22, 0.25) !important;
 }
 
 .btn-primary {
@@ -268,15 +285,41 @@ header h1 {
   background: var(--purple-accent-hover) !important;
 }
 
-.btn-primary:active {
+/* Override Bulma button for dark theme */
+.button.is-primary {
+  background-color: var(--purple-accent) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+}
+
+.button.is-primary:hover {
+  background-color: var(--purple-accent-hover) !important;
+}
+
+.button.is-primary:active {
   transform: scale(0.98);
 }
 
-.btn-primary:disabled {
-  background: #5c5c66;
+.button.is-primary:disabled {
+  background-color: #5c5c66 !important;
   cursor: not-allowed;
 }
 
+.button.is-ghost {
+  background: transparent;
+  border: none;
+  color: #adadb8;
+  padding: 4px 8px;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.button.is-ghost:hover {
+  background: #3d3d47;
+  color: #efeff1;
+}
+
+/* Stream list */
 .stream-list {
   display: flex;
   flex-direction: column;
@@ -298,38 +341,45 @@ header h1 {
   color: #5c5c66;
 }
 
-.stream-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: #2d2d35;
-  border: 1px solid #3d3d47;
-  border-radius: 6px;
+/* Override Bulma card for dark theme and drag-and-drop */
+.stream-item.card {
+  background-color: #2d2d35 !important;
+  border: 1px solid #3d3d47 !important;
+  border-radius: 6px !important;
   cursor: move;
   transition: all 0.2s;
   user-select: none;
+  margin-bottom: 0.5rem;
 }
 
-.stream-item:hover {
-  background: #35353d;
+.stream-item.card:hover {
+  background-color: #35353d !important;
   border-color: var(--purple-accent) !important;
 }
 
-.stream-item.dragging {
+.stream-item.card.dragging {
   opacity: 0.5;
   transform: scale(0.98);
 }
 
-.stream-item.drag-over {
+.stream-item.card.drag-over {
   border-color: var(--purple-accent) !important;
-  background: #3d2d55;
+  background-color: #3d2d55 !important;
+}
+
+.stream-item .card-content {
+  padding: 0.75rem;
+}
+
+.stream-item .media {
+  align-items: center;
 }
 
 .stream-handle {
   font-size: 18px;
   color: #adadb8;
   cursor: grab;
+  margin-right: 0.5rem;
 }
 
 .stream-handle:active {
@@ -342,10 +392,8 @@ header h1 {
 }
 
 .stream-username {
-  font-weight: 600;
-  font-size: 14px;
-  color: #efeff1;
-  margin-bottom: 4px;
+  color: #efeff1 !important;
+  margin-bottom: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -356,6 +404,7 @@ header h1 {
   display: flex;
   align-items: center;
   gap: 6px;
+  color: #adadb8 !important;
 }
 
 .status-indicator {
@@ -363,6 +412,7 @@ header h1 {
   height: 8px;
   border-radius: 50%;
   background: #5c5c66;
+  display: inline-block;
 }
 
 .status-indicator.live {
@@ -384,27 +434,7 @@ header h1 {
   gap: 4px;
 }
 
-.action-btn {
-  background: transparent;
-  border: none;
-  color: #adadb8;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  font-size: 16px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-}
-
-.action-btn:hover {
-  background: #3d3d47;
-  color: #efeff1;
-}
-
+/* Current stream */
 .current-stream {
   padding: 12px 16px;
   background: #1f1f23;
@@ -425,6 +455,7 @@ header h1 {
   color: var(--purple-accent) !important;
 }
 
+/* Footer */
 .footer {
   display: flex;
   justify-content: space-between;
@@ -468,3 +499,17 @@ header h1 {
   background: #5c5c66;
 }
 
+/* Responsive adjustments */
+@media (max-width: 400px) {
+  body {
+    width: 100%;
+  }
+  
+  .stream-item .card-content {
+    padding: 0.5rem;
+  }
+  
+  .stream-username {
+    font-size: 0.875rem;
+  }
+}
