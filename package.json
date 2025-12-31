@@ -1,0 +1,18 @@
+{
+  "name": "twitch-stream-rotator",
+  "version": "1.0.0",
+  "description": "A Chrome extension that automatically rotates between Twitch streams based on priority",
+  "scripts": {
+    "generate-icons": "node scripts/generate-icons.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "twitch",
+    "stream-rotation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "sharp": "^0.33.0"
+  }
+}

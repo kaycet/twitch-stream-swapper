@@ -101,7 +101,14 @@ twitch-stream-rotator/
 
 ### Building Icons
 
-Icons are required for Chrome Web Store submission. See `ICONS.md` for generation instructions.
+Icons are required for Chrome Web Store submission. 
+
+**Quick start:**
+1. Create `icons/icon-source.svg` with your icon design
+2. Run `npm install` to install dependencies
+3. Run `npm run generate-icons` to generate all PNG sizes
+
+See `ICONS.md` for detailed instructions and design guidelines.
 
 ### Using Vibe Kanban
 
