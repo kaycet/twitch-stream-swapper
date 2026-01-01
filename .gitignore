@@ -32,6 +32,9 @@ npm-debug.log*
 .wrangler/
 token-broker/.dev.vars
 
+# Local Playwright profile for screenshot generation
+.tmp-store-screenshots-profile/
+
 # Temporary files
 *.tmp
 *.temp
