@@ -43,7 +43,12 @@ class TwitchAPI {
   _getHeaders() {
     // If proxy is enabled, the broker adds auth headers server-side.
     if (this.proxyEnabled) {
-      return { 'Accept': 'application/json' };
+      // MV3 service workers may omit Origin/Referer. Provide extension id explicitly for broker allowlisting.
+      const extId = globalThis?.chrome?.runtime?.id || '';
+      return {
+        'Accept': 'application/json',
+        ...(extId ? { 'X-TSR-Extension-Id': extId } : {}),
+      };
     }
 
     // Dev fallback: call Helix directly with Client-ID only.

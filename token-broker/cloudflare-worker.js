@@ -53,7 +53,7 @@ function corsHeaders(request, env) {
     'Access-Control-Allow-Origin': allowOrigin,
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-TSR-Extension-Id',
   };
 }
 
@@ -73,19 +73,29 @@ function isOriginAllowed(request, env) {
 
   // If allowlist is not configured, allow (not recommended).
   if (allowed.length === 0) return true;
-  return !!origin && allowed.includes(origin);
+  if (origin && allowed.includes(origin)) return true;
+
+  // Fallback: MV3 service worker fetches can omit Origin/Referer. Allowlist the extension ID header.
+  const extId = (request.headers.get('X-TSR-Extension-Id') || '').trim();
+  if (!extId) return false;
+  const allowedExtIds = allowed
+    .filter((o) => /^chrome-extension:\/\//i.test(o))
+    .map((o) => o.replace(/^chrome-extension:\/\//i, '').trim());
+  return allowedExtIds.includes(extId);
 }
 
 function forbiddenOriginResponse(request, env) {
   const origin = getRequestOrigin(request);
   const rawOrigin = request.headers.get('Origin') || '';
   const referer = request.headers.get('Referer') || '';
+  const extId = request.headers.get('X-TSR-Extension-Id') || '';
   return new Response(JSON.stringify({
     error: 'forbidden_origin',
     origin,
     rawOrigin,
     referer,
-    hint: 'Origin must exactly match one of ALLOWED_ORIGINS. For extensions it is chrome-extension://<extension-id>.',
+    extId,
+    hint: 'Origin must exactly match one of ALLOWED_ORIGINS. For extensions it is chrome-extension://<extension-id>. If Origin is missing, ensure the client sends X-TSR-Extension-Id.',
   }), {
     status: 403,
     headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
