@@ -37,13 +37,16 @@
     </div>
 
     <div class="autoswap-extra">
-      <label class="toggle-row" title="If the current streamer raids someone else, stay on the raid instead of switching to category fallback.">
-        <span class="toggle-text">
-          <span>Stay on raids</span>
-          <span class="hint">Keeps ?referrer=raid redirects (prevents fallback redirect)</span>
-        </span>
-        <input type="checkbox" id="stayOnRaid">
-      </label>
+      <div class="autoswap-left">
+        <div class="autoswap-title">Stay on raids</div>
+        <div class="autoswap-subtitle">If a streamer raids someone, don’t override it with Category Fallback</div>
+      </div>
+      <div class="autoswap-right">
+        <label class="switch" title="If the current streamer raids someone else, stay on the raid instead of switching to category fallback.">
+          <input type="checkbox" id="stayOnRaid">
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>
 
     <div class="stream-list-container">
