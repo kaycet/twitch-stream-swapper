@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last Updated:** December 2024
+**Last Updated:** January 2026
 
 ## Overview
 
@@ -26,13 +26,15 @@ The Extension makes API requests to Twitch's public API (api.twitch.tv) to:
 - Get stream information (title, game, thumbnail)
 - Get category information for fallback streams
 
-**These requests use your Twitch Client ID** (which you provide) and are subject to Twitch's privacy policy and terms of service.
+By default, these requests use a built-in Twitch Client ID and are subject to Twitch's privacy policy and terms of service. Advanced users can optionally override the Client ID in settings.
+
+To avoid shipping any Twitch Client Secret inside the extension, the Extension can use a Cloudflare Worker token broker (`tsr-token-broker.com`) that proxies Twitch Helix requests and keeps the secret server-side.
 
 ### No Data Transmission
 
 The Extension does NOT:
 - Collect personal information
-- Transmit data to third-party servers (except Twitch API)
+- Transmit your local settings/stream list to third-party servers
 - Track browsing behavior
 - Use analytics services
 - Store data in the cloud
@@ -61,16 +63,19 @@ The Extension does NOT:
 - **Data**: No data collected, only displays notifications
 
 ### Host Permissions (Twitch API)
-- **Purpose**: Access Twitch API to check stream status
-- **Usage**: Makes API requests using your Twitch Client ID
-- **Data**: Only requests stream status information
+- **Purpose**: Access Twitch and related endpoints needed for core functionality
+- **Usage**:
+  - `https://api.twitch.tv/*`: Twitch Helix API requests
+  - `https://tsr-token-broker.com/*`: token broker proxy (keeps secrets off the extension)
+  - `https://twitch.tv/*` and `https://*.twitch.tv/*`: manage the single Twitch tab the user enables Auto‑Swap for
+- **Data**: Only requests stream/category information needed to determine live status and show UI
 
 ## Third-Party Services
 
 ### Twitch API
 - The Extension uses Twitch's public API
 - API requests are subject to [Twitch's Privacy Policy](https://www.twitch.tv/p/legal/privacy-policy/)
-- Your Twitch Client ID is required (you provide this in settings)
+- A Twitch Client ID is required (the extension includes a default; advanced users can override)
 - No authentication tokens or user credentials are stored
 
 ### Donation Links (Optional)
