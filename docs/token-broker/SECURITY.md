@@ -11,6 +11,7 @@ Prefer using **`/helix/*` only**. This proxies Twitch Helix and keeps the access
 
 - The Worker ships with **`GET /token` disabled by default** (recommended).
 - Only enable `/token` for debugging by setting `ENABLE_TOKEN_ENDPOINT="1"` (not recommended for production).
+- The Worker also enforces **GET/HEAD only** (non-GET methods return 405).
 
 ### 2) Configure Worker secrets + allowlist
 

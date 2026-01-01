@@ -17,4 +17,7 @@ export const TWITCH_CLIENT_ID = '2aocuq1w2bxwld7c0rbsw3zr1ue63x';
 // Token broker base URL (no trailing slash), e.g. 'https://twitch-token-broker.example.com'
 export const TOKEN_BROKER_URL = 'https://tsr-token-broker.com';
 
+// Public support link (Ko-fi)
+export const KO_FI_URL = 'https://ko-fi.com/twitchstreamswapperextension';
+
 

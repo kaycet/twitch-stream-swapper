@@ -36,9 +36,16 @@ function corsHeaders(request, env) {
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Vary': 'Origin',
-    'Access-Control-Allow-Methods': 'GET,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
+}
+
+function methodNotAllowedResponse(request, env) {
+  return new Response(JSON.stringify({ error: 'method_not_allowed' }), {
+    status: 405,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
+  });
 }
 
 function isOriginAllowed(request, env) {
@@ -136,6 +143,13 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+    }
+
+    // Defense-in-depth: only allow safe methods.
+    // Cloudflare WAF rules should enforce this too, but we enforce it here as well.
+    const method = String(request.method || '').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      return methodNotAllowedResponse(request, env);
     }
 
     // Proxy Helix (recommended production path)

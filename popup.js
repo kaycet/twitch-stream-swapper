@@ -1,6 +1,7 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
+import { KO_FI_URL } from './utils/config.js';
 
 function isTwitchUrl(url) {
   try {
@@ -153,6 +154,18 @@ class PopupManager {
     document.getElementById('settingsBtn').addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
     });
+
+    // Support button (Ko-fi)
+    const supportBtn = document.getElementById('supportBtn');
+    if (supportBtn) {
+      supportBtn.addEventListener('click', async () => {
+        try {
+          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, resolve));
+        } catch {
+          // Non-fatal
+        }
+      });
+    }
 
     // Help / quickstart
     const helpBtn = document.getElementById('helpBtn');

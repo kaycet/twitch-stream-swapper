@@ -1,7 +1,7 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
-import { TWITCH_CLIENT_ID } from './utils/config.js';
+import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
 
 class OptionsManager {
   constructor() {
@@ -52,16 +52,11 @@ class OptionsManager {
       this.clearAnalytics();
     });
 
-    // Update donation buttons when links change
-    document.getElementById('kofiLink').addEventListener('input', () => {
-      this.updateDonationButtons();
-      this.scheduleAutoSaveGeneral();
-    });
-
-    document.getElementById('paypalLink').addEventListener('input', () => {
-      this.updateDonationButtons();
-      this.scheduleAutoSaveGeneral();
-    });
+    // Ko-fi support button
+    const kofiBtn = document.getElementById('kofiBtn');
+    if (kofiBtn) {
+      kofiBtn.href = KO_FI_URL;
+    }
 
     // Premium feature checkboxes
     document.getElementById('notificationsEnabled').addEventListener('change', (e) => {
@@ -243,12 +238,11 @@ class OptionsManager {
     this.renderCustomTheme();
     this.updateCustomThemeVisibility();
 
-    // Donation links (stored separately or in settings)
-    const donationLinks = this.settings.donationLinks || {};
-    document.getElementById('kofiLink').value = donationLinks.kofi || '';
-    document.getElementById('paypalLink').value = donationLinks.paypal || '';
-
-    this.updateDonationButtons();
+    // Ko-fi support link
+    const kofiBtn = document.getElementById('kofiBtn');
+    if (kofiBtn) {
+      kofiBtn.href = KO_FI_URL;
+    }
     this.updatePremiumFeatures();
     this.applyTheme();
   }
@@ -301,34 +295,6 @@ class OptionsManager {
     if (btn) btn.disabled = !enabled || !this.customThemeDirty;
   }
 
-  updateDonationButtons() {
-    const kofiLink = document.getElementById('kofiLink').value.trim();
-    const paypalLink = document.getElementById('paypalLink').value.trim();
-    const buttonsDiv = document.getElementById('donationButtons');
-    const kofiBtn = document.getElementById('kofiBtn');
-    const paypalBtn = document.getElementById('paypalBtn');
-
-    if (kofiLink || paypalLink) {
-      buttonsDiv.style.display = 'flex';
-      
-      if (kofiLink) {
-        kofiBtn.href = kofiLink;
-        kofiBtn.style.display = 'inline-block';
-      } else {
-        kofiBtn.style.display = 'none';
-      }
-
-      if (paypalLink) {
-        paypalBtn.href = paypalLink;
-        paypalBtn.style.display = 'inline-block';
-      } else {
-        paypalBtn.style.display = 'none';
-      }
-    } else {
-      buttonsDiv.style.display = 'none';
-    }
-  }
-
   updatePremiumFeatures() {
     const isPremium = this.settings.premiumStatus || false;
     const analyticsSection = document.getElementById('analyticsSection');
@@ -379,10 +345,6 @@ class OptionsManager {
           : '',
         notificationsEnabled: document.getElementById('notificationsEnabled').checked,
         theme: document.getElementById('theme').value,
-        donationLinks: {
-          kofi: document.getElementById('kofiLink').value.trim(),
-          paypal: document.getElementById('paypalLink').value.trim()
-        }
       };
 
       // Validate custom theme hex values when selected
@@ -404,29 +366,6 @@ class OptionsManager {
         // eslint-disable-next-line no-control-regex
         newSettings.fallbackCategory = newSettings.fallbackCategory.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 50);
       }
-
-      // Validate URLs if provided
-      const validateUrl = (value) => {
-        const v = (value || '').trim();
-        if (!v) return '';
-        try {
-          const u = new URL(v);
-          if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-          return u.toString();
-        } catch {
-          return null;
-        }
-      };
-
-      const kofi = validateUrl(newSettings.donationLinks.kofi);
-      const paypal = validateUrl(newSettings.donationLinks.paypal);
-      if (kofi === null || paypal === null) {
-        const errorInfo = ErrorMessageManager.getErrorMessage('Invalid donation URL (must be http/https)', 'saveSettings');
-        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
-        return;
-      }
-      newSettings.donationLinks.kofi = kofi;
-      newSettings.donationLinks.paypal = paypal;
 
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };

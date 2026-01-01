@@ -74,7 +74,7 @@ The Extension does NOT:
 - No authentication tokens or user credentials are stored
 
 ### Donation Links (Optional)
-- If you configure donation links (Ko-fi, PayPal), these are stored locally
+- If you use the Ko-fi support link, it opens an external Ko-fi page
 - Clicking donation buttons takes you to external sites
 - The Extension does not track donations or payment information
 
