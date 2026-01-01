@@ -126,6 +126,20 @@ class TwitchAPI {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        // Best-effort parse error payload for better diagnostics (especially from the token broker).
+        let errorBodyText = '';
+        let errorBodyJson = null;
+        try {
+          errorBodyText = await response.text();
+          try {
+            errorBodyJson = JSON.parse(errorBodyText);
+          } catch {
+            // ignore
+          }
+        } catch {
+          // ignore
+        }
+
         if (response.status === 429) {
           // Rate limited - wait and retry
           const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
@@ -145,6 +159,18 @@ class TwitchAPI {
           throw error;
         }
 
+        // Common when the token broker blocks a request due to Origin mismatch.
+        if (response.status === 403 && errorBodyJson?.error === 'forbidden_origin') {
+          const origin = errorBodyJson?.origin || '';
+          const hint = errorBodyJson?.hint || '';
+          const error = new Error(
+            `Token broker rejected this request (403 forbidden_origin). Origin="${origin}". ${hint}`.trim()
+          );
+          error.code = 'FORBIDDEN_ORIGIN';
+          error.origin = origin;
+          throw error;
+        }
+
         if (response.status >= 500) {
           const error = new Error(`Twitch API server error: ${response.status} ${response.statusText}`);
           error.code = 'SERVER_ERROR';
@@ -157,7 +183,10 @@ class TwitchAPI {
           throw error;
         }
 
-        const error = new Error(`Twitch API error: ${response.status} ${response.statusText}`);
+        const extra = errorBodyJson
+          ? ` body=${JSON.stringify(errorBodyJson)}`
+          : (errorBodyText ? ` body=${errorBodyText}` : '');
+        const error = new Error(`Twitch API error: ${response.status} ${response.statusText}.${extra}`);
         error.code = 'API_ERROR';
         throw error;
       }
