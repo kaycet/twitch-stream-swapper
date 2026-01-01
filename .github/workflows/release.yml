@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (example: v1.0.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,6 +20,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # On tag push, github.ref is the tag. On manual runs, use the provided tag.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,9 +42,18 @@ jobs:
       - name: Package extension ZIP
         run: npm run package
 
+      - name: Upload build artifact (Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitch-stream-swapper-zip
+          path: dist/*.zip
+          if-no-files-found: error
+
       - name: Create GitHub Release + upload ZIP
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
 
 
