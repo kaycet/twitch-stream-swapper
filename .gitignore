@@ -39,3 +39,6 @@ token-broker/.dev.vars
 # Chrome extension specific
 *.crx
 *.pem
+
+# Local-only publishing notes
+docs/CHROME_STORE.md
