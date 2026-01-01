@@ -543,6 +543,11 @@ class BackgroundWorker {
         chrome.tabs.update(managedTabId, { url: streamUrl }, () => resolve(true));
       });
 
+      // Count fallback redirects as switches for analytics (supporter feature).
+      if (this.settings?.premiumStatus) {
+        await this.recordSwitch(username, { source: 'fallback' });
+      }
+
       return true;
     } catch (error) {
       console.error('Error getting fallback stream:', error);
@@ -584,12 +589,13 @@ class BackgroundWorker {
     await storage.saveAnalytics(analytics);
   }
 
-  async recordSwitch(username) {
+  async recordSwitch(username, meta = {}) {
     const analytics = await storage.getAnalytics();
     analytics.switchCount = (analytics.switchCount || 0) + 1;
     analytics.lastSwitch = {
       username,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ...meta
     };
     await storage.saveAnalytics(analytics);
   }

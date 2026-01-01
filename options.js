@@ -10,6 +10,7 @@ class OptionsManager {
     this.AUTO_SAVE_DELAY_MS = 600;
     this.advancedDirty = false;
     this.customThemeDirty = false;
+    this._analyticsRefreshTimer = null;
   }
 
   async init() {
@@ -17,6 +18,7 @@ class OptionsManager {
     this.setupEventListeners();
     this.render();
     this.loadAnalytics();
+    this.setupStorageListeners();
     this.setAdvancedDirty(false);
     this.setCustomThemeDirty(false);
   }
@@ -133,6 +135,21 @@ class OptionsManager {
         await this.applyCustomThemeSettings();
       });
     }
+  }
+
+  setupStorageListeners() {
+    // Keep analytics UI live-updated while the Options page is open.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (!this.settings?.premiumStatus) return;
+      if (!changes.analytics) return;
+
+      // Debounce to avoid rapid re-renders (e.g., multiple writes in quick succession).
+      if (this._analyticsRefreshTimer) clearTimeout(this._analyticsRefreshTimer);
+      this._analyticsRefreshTimer = setTimeout(() => {
+        this.loadAnalytics();
+      }, 200);
+    });
   }
 
   setupCustomThemeListeners() {
