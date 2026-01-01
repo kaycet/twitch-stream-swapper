@@ -21,8 +21,24 @@
 let cachedToken = null;
 let cachedExpiresAt = 0;
 
-function corsHeaders(request, env) {
+function getRequestOrigin(request) {
+  // Browser CORS requests usually include Origin, but some contexts (notably MV3 service workers)
+  // may omit it. In that case, fall back to Referer origin.
   const origin = request.headers.get('Origin') || '';
+  if (origin) return origin;
+
+  const referer = request.headers.get('Referer') || '';
+  if (!referer) return '';
+  try {
+    const u = new URL(referer);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return '';
+  }
+}
+
+function corsHeaders(request, env) {
+  const origin = getRequestOrigin(request);
   const allowed = (env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(s => s.trim())
@@ -49,7 +65,7 @@ function methodNotAllowedResponse(request, env) {
 }
 
 function isOriginAllowed(request, env) {
-  const origin = request.headers.get('Origin') || '';
+  const origin = getRequestOrigin(request);
   const allowed = (env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(s => s.trim())
@@ -61,10 +77,14 @@ function isOriginAllowed(request, env) {
 }
 
 function forbiddenOriginResponse(request, env) {
-  const origin = request.headers.get('Origin') || '';
+  const origin = getRequestOrigin(request);
+  const rawOrigin = request.headers.get('Origin') || '';
+  const referer = request.headers.get('Referer') || '';
   return new Response(JSON.stringify({
     error: 'forbidden_origin',
     origin,
+    rawOrigin,
+    referer,
     hint: 'Origin must exactly match one of ALLOWED_ORIGINS. For extensions it is chrome-extension://<extension-id>.',
   }), {
     status: 403,

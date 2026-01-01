@@ -26,6 +26,7 @@ In Cloudflare → Workers & Pages → your Worker → **Settings**:
 Notes:
 - `ALLOWED_ORIGINS` supports comma-separated values.
 - Keep it exact; no wildcards.
+- Some Chrome extension contexts may omit the `Origin` header; the broker falls back to the `Referer` origin for allowlisting in that case.
 
 ### 3) Put it behind a custom domain (recommended)
 
