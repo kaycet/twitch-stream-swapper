@@ -8,41 +8,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
-
-function isTwitchUrl(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.toLowerCase();
-    return host === 'twitch.tv' || host.endsWith('.twitch.tv') || host === 'twitch.com' || host.endsWith('.twitch.com');
-  } catch {
-    return false;
-  }
-}
-
-function getChannelFromTwitchUrl(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.toLowerCase();
-    if (!(host === 'twitch.tv' || host.endsWith('.twitch.tv') || host === 'twitch.com' || host.endsWith('.twitch.com'))) {
-      return null;
-    }
-    const path = u.pathname || '/';
-    const seg = path.split('/').filter(Boolean)[0];
-    if (!seg) return null;
-
-    // Reserved/non-channel routes
-    const reserved = new Set([
-      'directory', 'downloads', 'p', 'videos', 'clips', 'search',
-      'settings', 'subscriptions', 'wallet', 'turbo', 'prime',
-      'inventory', 'drops', 'friends', 'messages', 'moderator',
-      'safety', 'jobs', 'privacy', 'terms'
-    ]);
-    if (reserved.has(seg.toLowerCase())) return null;
-    return seg.toLowerCase();
-  } catch {
-    return null;
-  }
-}
+import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 
 class BackgroundWorker {
   constructor() {
@@ -530,6 +496,12 @@ class BackgroundWorker {
 
     if (!tab) return false;
     if (!isTwitchUrl(tab.url || '')) return false; // Only use fallback if the managed tab is a Twitch tab
+
+    // If the current Twitch page is a raid redirect (?referrer=raid) and user wants to stay on raids,
+    // do not override it with category fallback redirects.
+    if (this.settings?.stayOnRaid && isRaidReferrerUrl(tab.url || '')) {
+      return false;
+    }
 
     const currentChannel = getChannelFromTwitchUrl(tab.url || '');
     const isFallbackActive = !!this.runtime?.fallback?.active;

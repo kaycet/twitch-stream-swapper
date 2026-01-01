@@ -2,16 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
-
-function isTwitchUrl(url) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.toLowerCase();
-    return host === 'twitch.tv' || host.endsWith('.twitch.tv') || host === 'twitch.com' || host.endsWith('.twitch.com');
-  } catch {
-    return false;
-  }
-}
+import { isTwitchUrl } from './utils/twitch-url.js';
 
 class PopupManager {
   constructor() {
@@ -75,10 +66,19 @@ class PopupManager {
 
       // Update autoswap UI
       this.updateAutoSwapUI();
+
+      // Update raid behavior toggle
+      this.updateStayOnRaidUI();
     } catch (error) {
       console.error('Error loading data:', error);
       this.showMessage('Error loading data', 'error');
     }
+  }
+
+  updateStayOnRaidUI() {
+    const el = document.getElementById('stayOnRaid');
+    if (!el) return;
+    el.checked = !!this.settings?.stayOnRaid;
   }
 
   applyTheme() {
@@ -154,6 +154,22 @@ class PopupManager {
     document.getElementById('settingsBtn').addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
     });
+
+    // Stay on raids toggle
+    const stayOnRaid = document.getElementById('stayOnRaid');
+    if (stayOnRaid) {
+      stayOnRaid.addEventListener('change', async () => {
+        try {
+          const enabled = !!stayOnRaid.checked;
+          await storage.saveSettings({ stayOnRaid: enabled });
+          this.settings = await storage.getSettings();
+          this.showMessage(enabled ? 'Staying on raids: ON' : 'Staying on raids: OFF', 'success');
+        } catch (e) {
+          console.error('Failed to save raid setting:', e);
+          this.showMessage('Failed to save setting', 'error');
+        }
+      });
+    }
 
     // Support button (Ko-fi)
     const supportBtn = document.getElementById('supportBtn');

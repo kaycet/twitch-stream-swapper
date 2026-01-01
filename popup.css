@@ -97,6 +97,14 @@ header h1 {
   border-bottom: 1px solid var(--border);
 }
 
+.autoswap-extra {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+}
+
 .autoswap-left {
   display: flex;
   flex-direction: column;

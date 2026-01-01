@@ -37,21 +37,6 @@ Notes:
 `;
 }
 
-async function waitForExtensionId(context, timeoutMs = 15_000) {
-  const started = Date.now();
-  // MV3 background is a service worker; its URL includes chrome-extension://<id>/
-  while (Date.now() - started < timeoutMs) {
-    const workers = context.serviceWorkers();
-    for (const w of workers) {
-      const u = w.url();
-      const m = u.match(/^chrome-extension:\/\/([a-p]{32})\//i);
-      if (m) return m[1];
-    }
-    await new Promise(r => setTimeout(r, 250));
-  }
-  throw new Error('Timed out waiting for extension service worker. Is the extension loading?');
-}
-
 function readJson(p) {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
