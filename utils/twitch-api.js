@@ -382,7 +382,10 @@ class TwitchAPI {
 
       if (data.data && data.data.length > 0) {
         // Pick random stream from results
-        const randomIndex = Math.floor(Math.random() * data.data.length);
+        // Use CSPRNG (CodeQL: insecure randomness). MV3 provides Web Crypto; Node 20 does too.
+        const a = new Uint32Array(1);
+        globalThis.crypto.getRandomValues(a);
+        const randomIndex = a[0] % data.data.length;
         return data.data[randomIndex];
       }
 

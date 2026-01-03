@@ -134,7 +134,8 @@ async function getAppToken(env) {
 async function proxyHelix(request, env) {
   const url = new URL(request.url);
   // /helix/... -> https://api.twitch.tv/helix/...
-  const upstreamUrl = new URL(`https://api.twitch.tv${url.pathname.replace(/^\/helix/, '/helix')}${url.search}`);
+  // url.pathname already starts with "/helix/" (we only call this for that route).
+  const upstreamUrl = new URL(`https://api.twitch.tv${url.pathname}${url.search}`);
 
   const token = await getAppToken(env);
 
@@ -191,7 +192,13 @@ export default {
       try {
         return await proxyHelix(request, env);
       } catch (err) {
-        return new Response(JSON.stringify({ error: 'helix_proxy_error', message: String(err?.message || err) }), {
+        // Don't leak internal error details to clients (CodeQL: information exposure through stack trace).
+        const requestId = crypto.randomUUID();
+        console.error(`[${requestId}] helix_proxy_error`, err);
+        const debug = String(env.DEBUG_ERRORS || '').trim() === '1';
+        const body = { error: 'helix_proxy_error', requestId };
+        if (debug) body.message = String(err?.message || err);
+        return new Response(JSON.stringify(body), {
           status: 500,
           headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
         });
@@ -234,7 +241,13 @@ export default {
         },
       });
     } catch (err) {
-      return new Response(JSON.stringify({ error: 'token_broker_error', message: String(err?.message || err) }), {
+      // Don't leak internal error details to clients (CodeQL: information exposure through stack trace).
+      const requestId = crypto.randomUUID();
+      console.error(`[${requestId}] token_broker_error`, err);
+      const debug = String(env.DEBUG_ERRORS || '').trim() === '1';
+      const body = { error: 'token_broker_error', requestId };
+      if (debug) body.message = String(err?.message || err);
+      return new Response(JSON.stringify(body), {
         status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
       });
