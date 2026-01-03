@@ -42,6 +42,38 @@ jobs:
       - name: Package extension ZIP
         run: npm run package
 
+      - name: Install Chrome (for CRX signing)
+        if: ${{ secrets.CRX_PRIVATE_KEY_B64 != '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/google-linux-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+      - name: Build signed CRX (Verified CRX uploads)
+        if: ${{ secrets.CRX_PRIVATE_KEY_B64 != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./manifest.json').version")"
+          echo "${{ secrets.CRX_PRIVATE_KEY_B64 }}" | base64 -d > privatekey.pem
+
+          # Pack extension using Chrome. Output will be alongside the extension directory.
+          google-chrome --no-sandbox --pack-extension="dist/extension" --pack-extension-key="privatekey.pem"
+
+          # Normalize output name into dist/ for release artifacts.
+          if [ -f "dist/extension.crx" ]; then
+            mv "dist/extension.crx" "dist/twitch-stream-swapper-${VERSION}.crx"
+          elif [ -f "dist/extension/extension.crx" ]; then
+            mv "dist/extension/extension.crx" "dist/twitch-stream-swapper-${VERSION}.crx"
+          else
+            echo "CRX output not found" >&2
+            ls -la dist || true
+            exit 1
+          fi
+
       - name: Upload build artifact (Actions)
         uses: actions/upload-artifact@v4
         with:
@@ -49,10 +81,20 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+      - name: Upload CRX artifact (Actions)
+        if: ${{ secrets.CRX_PRIVATE_KEY_B64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitch-stream-swapper-crx
+          path: dist/*.crx
+          if-no-files-found: error
+
       - name: Create GitHub Release + upload ZIP
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/*.crx
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
 
