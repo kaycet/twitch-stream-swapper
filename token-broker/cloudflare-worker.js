@@ -195,9 +195,7 @@ export default {
         // Don't leak internal error details to clients (CodeQL: information exposure through stack trace).
         const requestId = crypto.randomUUID();
         console.error(`[${requestId}] helix_proxy_error`, err);
-        const debug = String(env.DEBUG_ERRORS || '').trim() === '1';
         const body = { error: 'helix_proxy_error', requestId };
-        if (debug) body.message = String(err?.message || err);
         return new Response(JSON.stringify(body), {
           status: 500,
           headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },
@@ -244,9 +242,7 @@ export default {
       // Don't leak internal error details to clients (CodeQL: information exposure through stack trace).
       const requestId = crypto.randomUUID();
       console.error(`[${requestId}] token_broker_error`, err);
-      const debug = String(env.DEBUG_ERRORS || '').trim() === '1';
       const body = { error: 'token_broker_error', requestId };
-      if (debug) body.message = String(err?.message || err);
       return new Response(JSON.stringify(body), {
         status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders(request, env) },

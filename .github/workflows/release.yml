@@ -42,8 +42,20 @@ jobs:
       - name: Package extension ZIP
         run: npm run package
 
+      - name: Detect CRX signing key
+        id: crx_key
+        shell: bash
+        env:
+          CRX_PRIVATE_KEY_B64: ${{ secrets.CRX_PRIVATE_KEY_B64 }}
+        run: |
+          if [ -n "${CRX_PRIVATE_KEY_B64:-}" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install Chrome (for CRX signing)
-        if: ${{ secrets.CRX_PRIVATE_KEY_B64 != '' }}
+        if: ${{ steps.crx_key.outputs.has_key == 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg
@@ -53,12 +65,14 @@ jobs:
           sudo apt-get install -y google-chrome-stable
 
       - name: Build signed CRX (Verified CRX uploads)
-        if: ${{ secrets.CRX_PRIVATE_KEY_B64 != '' }}
+        if: ${{ steps.crx_key.outputs.has_key == 'true' }}
         shell: bash
+        env:
+          CRX_PRIVATE_KEY_B64: ${{ secrets.CRX_PRIVATE_KEY_B64 }}
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./manifest.json').version")"
-          echo "${{ secrets.CRX_PRIVATE_KEY_B64 }}" | base64 -d > privatekey.pem
+          echo "${CRX_PRIVATE_KEY_B64}" | base64 -d > privatekey.pem
 
           # Pack extension using Chrome. Output will be alongside the extension directory.
           google-chrome --no-sandbox --pack-extension="dist/extension" --pack-extension-key="privatekey.pem"
@@ -82,7 +96,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload CRX artifact (Actions)
-        if: ${{ secrets.CRX_PRIVATE_KEY_B64 != '' }}
+        if: ${{ steps.crx_key.outputs.has_key == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: twitch-stream-swapper-crx
