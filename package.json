@@ -1,6 +1,6 @@
 {
   "name": "twitch-stream-swapper",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Dev tooling (lint/tests/packaging) for the Twitch Stream Swapper Chrome extension.",
   "type": "module",
