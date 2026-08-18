@@ -853,7 +853,8 @@ class PopupManager {
       let hasChanges = false;
       this.streams.forEach(stream => {
         const wasLive = stream.isLive || false;
-        const isLive = statuses[stream.username] !== null;
+        // Treat missing entries (invalid/filtered usernames) as offline too.
+        const isLive = statuses[stream.username] != null;
         
         if (wasLive !== isLive) {
           stream.isLive = isLive;

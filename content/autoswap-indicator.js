@@ -175,7 +175,7 @@ async function refresh() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.settings || changes.streams) {
+  if (changes.settings || changes.streams || changes.runtime) {
     refresh().catch(() => {});
   }
 });
