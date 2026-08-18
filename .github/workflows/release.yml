@@ -112,4 +112,36 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
 
+      - name: Detect Chrome Web Store credentials
+        id: cws_creds
+        shell: bash
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          if [ -n "${CWS_EXTENSION_ID:-}" ] && [ -n "${CWS_CLIENT_ID:-}" ] && [ -n "${CWS_REFRESH_TOKEN:-}" ]; then
+            echo "has_creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Runs after the GitHub Release so a store hiccup never blocks the release itself.
+      # Setup: https://developer.chrome.com/docs/webstore/using-api — then add repo secrets
+      # CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN, CWS_PUBLISHER_ID.
+      - name: Upload + submit to Chrome Web Store
+        if: ${{ steps.cws_creds.outputs.has_creds == 'true' }}
+        shell: bash
+        env:
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+        run: |
+          set -euo pipefail
+          ZIP="$(ls dist/*.zip | head -n 1)"
+          echo "Uploading ${ZIP} to Chrome Web Store"
+          npx --yes chrome-webstore-upload-cli@3 --source "$ZIP"
+
 
