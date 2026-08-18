@@ -233,7 +233,9 @@ class BackgroundWorker {
       const statusUpdatesByUsername = new Map();
 
       for (const stream of prioritized) {
-        const isLive = statuses[stream.username] !== null;
+        // Missing entries (e.g. usernames the API layer filtered out as invalid)
+        // must count as offline, so check for both null and undefined.
+        const isLive = statuses[stream.username] != null;
         
         // Update stream status
         stream.isLive = isLive;
@@ -308,9 +310,10 @@ class BackgroundWorker {
 
     } catch (error) {
       console.error('Error polling streams:', error);
-      
-      // Handle different error types
-      if (error.code === 'AUTH_ERROR' || error.message.includes('Client ID') || error.message.includes('401')) {
+
+      // Handle different error types (message may be missing on non-Error throws)
+      const errorMessage = String(error?.message || '');
+      if (error.code === 'AUTH_ERROR' || errorMessage.includes('Client ID') || errorMessage.includes('401')) {
         // Stop polling for auth errors (usually token broker/CORS/backend issues in production)
         this.stopPolling();
         console.error('Authentication error - polling stopped. Verify token broker is online and CORS allows the extension origin.');

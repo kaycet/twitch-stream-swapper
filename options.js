@@ -364,19 +364,8 @@ class OptionsManager {
         theme: document.getElementById('theme').value,
       };
 
-      // Validate custom theme hex values when selected
-      if (newSettings.theme === 'custom') {
-        const mustHex = (v) => /^#[0-9a-fA-F]{6}$/.test(String(v || '').trim());
-        const fields = Object.entries(newSettings.customTheme);
-        for (const [k, v] of fields) {
-          if (!mustHex(v)) {
-            const errorInfo = ErrorMessageManager.getErrorMessage(`Invalid color for ${k} (use #RRGGBB)`, 'saveSettings');
-            this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
-            return;
-          }
-          newSettings.customTheme[k] = String(v).trim().toUpperCase();
-        }
-      }
+      // Custom theme colors are validated and persisted separately via
+      // applyCustomThemeSettings(); general autosave must not touch them.
 
       // Sanitize category
       if (newSettings.fallbackCategory) {
