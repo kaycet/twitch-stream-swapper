@@ -34,9 +34,14 @@ class NotificationManager {
       let iconUrl = 'icons/icon-128.png';
       if (thumbnailUrl) {
         try {
+          // Helix returns a template URL with literal {width}x{height} placeholders;
+          // substitute real dimensions or the icon fails to load.
+          const resolved = thumbnailUrl
+            .replace('{width}', '128')
+            .replace('{height}', '72');
           // Validate URL format
-          new URL(thumbnailUrl);
-          iconUrl = thumbnailUrl;
+          new URL(resolved);
+          iconUrl = resolved;
         } catch {
           // Invalid URL, use default
         }
