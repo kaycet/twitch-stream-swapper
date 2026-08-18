@@ -140,8 +140,10 @@ jobs:
           PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
         run: |
           set -euo pipefail
-          ZIP="$(ls dist/*.zip | head -n 1)"
-          echo "Uploading ${ZIP} to Chrome Web Store"
-          npx --yes chrome-webstore-upload-cli@3 --source "$ZIP"
+          # Items enrolled in Verified CRX Uploads must be updated with the signed
+          # .crx (store rejects zips with PKG_MUST_UPDATE_AS_CRX), so prefer it.
+          PKG="$(ls dist/*.crx dist/*.zip 2>/dev/null | head -n 1)"
+          echo "Uploading ${PKG} to Chrome Web Store"
+          npx --yes chrome-webstore-upload-cli@3 --source "$PKG"
 
 
