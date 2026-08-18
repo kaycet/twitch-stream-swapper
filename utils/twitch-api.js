@@ -147,7 +147,9 @@ class TwitchAPI {
 
         if (response.status === 429) {
           // Rate limited - wait and retry
-          const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
+          // Retry-After may be a non-numeric HTTP date; fall back to 60s so delays never become NaN.
+          const parsedRetryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+          const retryAfter = Number.isFinite(parsedRetryAfter) && parsedRetryAfter > 0 ? parsedRetryAfter : 60;
           const error = new Error('Rate limit exceeded');
           error.code = 'RATE_LIMIT';
           error.retryAfter = retryAfter;
@@ -227,8 +229,8 @@ class TwitchAPI {
       }
 
       // Retry logic for retryable errors
-      if (retries > 0 && !error.code || 
-          (error.code && ['SERVER_ERROR', 'TIMEOUT', 'NETWORK_ERROR'].includes(error.code))) {
+      if (retries > 0 &&
+          (!error.code || ['SERVER_ERROR', 'TIMEOUT', 'NETWORK_ERROR'].includes(error.code))) {
         // Exponential backoff
         const delay = Math.pow(2, 3 - retries) * 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
