@@ -899,6 +899,10 @@ class PopupManager {
     } else {
       currentStreamDiv.style.display = 'none';
     }
+
+    document.querySelectorAll('.stream-item').forEach((el) => {
+      el.classList.toggle('is-current', el.dataset.username === liveStream?.username);
+    });
   }
 
   updateCategoryFallbackWidget() {
