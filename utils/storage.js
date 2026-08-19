@@ -156,6 +156,7 @@ class StorageManager {
       redirectEnabled: false,
       promptBeforeSwitch: false, // Default to auto-swap (off)
       notificationsEnabled: false,
+      quietHours: { enabled: false, start: "22:00", end: "08:00" },
       // If the currently-watched streamer raids someone, Twitch redirects to a new channel with ?referrer=raid.
       // When enabled, we avoid overriding raids with category fallback redirects.
       stayOnRaid: true,

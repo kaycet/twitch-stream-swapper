@@ -7,6 +7,7 @@
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
+import { isQuietHours } from './utils/quiet-hours.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 
@@ -68,7 +69,7 @@ class BackgroundWorker {
     this.startPolling();
 
     // Set initial badge state
-    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, isLive: false });
+    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
 
     // Prompt-before-switch handlers (optional setting)
     chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
@@ -117,21 +118,21 @@ class BackgroundWorker {
     this.startPolling();
 
     // Update badge immediately when user toggles Auto-Swap in the popup/options.
-    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, isLive: false });
+    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
   }
 
-  updateBadge({ enabled, isLive, target } = {}) {
+  updateBadge({ enabled, liveCount = 0, target } = {}) {
     try {
       if (!chrome?.action) return;
 
       const on = !!enabled;
-      const live = !!isLive;
-      const text = on ? (live ? 'LIVE' : 'ON') : '';
-      // Use high-contrast colors so the user can tell it's enabled at a glance.
-      const color = on ? '#00dc82' : '#5c5c66';
+      const count = Number(liveCount) || 0;
+      const text = count > 0 ? String(count) : '';
+      // Purple = Auto-Swap on, gray = off; the count stays glanceable either way.
+      const color = on ? '#9146ff' : '#5c5c66';
       const title = on
-        ? `Auto-Swap ON${target ? ` — Target: ${target}` : ''}`
-        : 'Auto-Swap OFF';
+        ? (target ? `${count} live — watching ${target}` : 'Auto-Swap ON — no one live')
+        : (count > 0 ? `Auto-Swap off — ${count} live` : 'Auto-Swap off');
 
       chrome.action.setBadgeText({ text });
       chrome.action.setBadgeBackgroundColor({ color });
@@ -209,14 +210,14 @@ class BackgroundWorker {
           const newSettings = { ...this.settings, redirectEnabled: false, managedTwitchTabId: null };
           await storage.saveSettings(newSettings);
           this.settings = newSettings;
-          this.updateBadge({ enabled: false, isLive: false });
+          this.updateBadge({ enabled: false, liveCount: 0 });
           return;
         }
       }
 
       const streams = await storage.getStreams();
       if (streams.length === 0) {
-        this.updateBadge({ enabled: !!this.settings?.redirectEnabled, isLive: false });
+        this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
         return;
       }
 
@@ -245,19 +246,23 @@ class BackgroundWorker {
           highestPriorityLive = stream;
         }
 
-        // Send notifications for newly live streams (premium feature)
-        if (isLive && this.settings?.notificationsEnabled && this.settings?.premiumStatus) {
+        // Send notifications for newly live streams (respects per-channel bell + quiet hours)
+        if (isLive) {
           const wasLive = stream.wasLive || false;
-          if (!wasLive && stream.streamData) {
+          const wantsNotify = this.settings?.notificationsEnabled
+            && stream.notify !== false
+            && !isQuietHours(this.settings?.quietHours);
+          if (!wasLive && stream.streamData && wantsNotify) {
             notificationManager.notifyStreamLive(
               stream.username,
               stream.streamData.title,
               stream.streamData.game_name,
-              stream.streamData.thumbnail_url
+              stream.streamData.thumbnail_url,
+              stream.streamData.viewer_count
             );
           }
           stream.wasLive = true;
-        } else if (!isLive) {
+        } else {
           stream.wasLive = false;
         }
 
@@ -273,11 +278,11 @@ class BackgroundWorker {
         await this.setFallbackRuntime({ active: false });
       }
 
-      // Badge: indicate enabled + whether the current highest priority is live
+      // Badge: live-count at a glance; color signals whether Auto-Swap is on
       this.updateBadge({
         enabled: !!this.settings?.redirectEnabled,
-        isLive: !!highestPriorityLive,
-        target: highestPriorityLive?.username || prioritized?.[0]?.username || null
+        liveCount: prioritized.filter((s) => s.isLive).length,
+        target: highestPriorityLive?.username || null
       });
 
       // Save updated stream statuses WITHOUT overwriting list edits that might have happened mid-poll
@@ -651,7 +656,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       const newSettings = { ...worker.settings, redirectEnabled: false, managedTwitchTabId: null };
       await storage.saveSettings(newSettings);
       worker.settings = newSettings;
-      worker.updateBadge({ enabled: false, isLive: false });
+      worker.updateBadge({ enabled: false, liveCount: 0 });
     })
     .catch((e) => console.warn('Failed to disable Auto-Swap on tab close:', e));
 });
