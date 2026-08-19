@@ -2,6 +2,8 @@
  * Notification utilities for desktop notifications
  */
 
+import { formatViewers } from './format.js';
+
 class NotificationManager {
   /**
    * Request notification permission
@@ -20,8 +22,9 @@ class NotificationManager {
    * @param {string} title - Stream title
    * @param {string} gameName - Game/category name
    * @param {string} thumbnailUrl - Thumbnail URL
+   * @param {number} [viewerCount] - Current viewer count
    */
-  async notifyStreamLive(username, title, gameName, thumbnailUrl) {
+  async notifyStreamLive(username, title, gameName, thumbnailUrl, viewerCount) {
     if (!chrome.notifications) {
       console.warn('Notifications API not available');
       return;
@@ -51,11 +54,17 @@ class NotificationManager {
         ? (title.length > 100 ? title.substring(0, 97) + '...' : title)
         : `Playing ${gameName || 'Unknown'}`;
 
+      const contextParts = [];
+      if (gameName) contextParts.push(gameName);
+      const viewers = formatViewers(viewerCount);
+      if (viewers) contextParts.push(`${viewers} viewers`);
+
       await chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: iconUrl,
         title: `${username} is now live!`,
         message: message,
+        ...(contextParts.length > 0 ? { contextMessage: contextParts.join(' · ') } : {}),
         buttons: [
           { title: 'Watch Now' }
         ],

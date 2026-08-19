@@ -51,6 +51,34 @@
             <input type="checkbox" id="promptBeforeSwitch">
           </label>
         </div>
+
+        <div class="setting-item">
+          <label for="notificationsEnabled" class="toggle-row">
+            <span class="toggle-text">
+              <span>Desktop Notifications</span>
+              <span class="hint">Get notified when streams go live. Mute single channels with the bell in the popup.</span>
+            </span>
+            <input type="checkbox" id="notificationsEnabled">
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <label for="quietHoursEnabled" class="toggle-row">
+            <span class="toggle-text">
+              <span>Quiet hours</span>
+              <span class="hint">No notifications inside this window. Overnight spans work (e.g. 22:00 to 08:00).</span>
+            </span>
+            <input type="checkbox" id="quietHoursEnabled">
+          </label>
+          <div class="quiet-hours-times">
+            <label class="time-label">From
+              <input type="time" id="quietHoursStart" value="22:00">
+            </label>
+            <label class="time-label">To
+              <input type="time" id="quietHoursEnd" value="08:00">
+            </label>
+          </div>
+        </div>
       </section>
 
       <!-- Category Fallback -->
@@ -98,16 +126,6 @@
               <span class="hint">No verification codes. Please be cool.</span>
             </span>
             <input type="checkbox" id="premiumStatus">
-          </label>
-        </div>
-
-        <div class="setting-item premium-feature">
-          <label for="notificationsEnabled" class="toggle-row">
-            <span class="toggle-text">
-              <span>Desktop Notifications</span>
-              <span class="hint premium-hint">Get notified when streams go live</span>
-            </span>
-            <input type="checkbox" id="notificationsEnabled">
           </label>
         </div>
 

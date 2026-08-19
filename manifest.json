@@ -7,7 +7,8 @@
     "storage",
     "tabs",
     "idle",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://api.twitch.tv/*",
@@ -36,10 +37,14 @@
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["*://twitch.tv/*", "*://*.twitch.tv/*"],
-      "js": ["content/autoswap-indicator.js"],
+      "matches": [
+        "*://twitch.tv/*",
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "content/autoswap-indicator.js"
+      ],
       "run_at": "document_idle"
     }
   ]
 }
-

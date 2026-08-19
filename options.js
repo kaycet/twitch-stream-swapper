@@ -60,12 +60,14 @@ class OptionsManager {
       kofiBtn.href = KO_FI_URL;
     }
 
-    // Premium feature checkboxes
-    document.getElementById('notificationsEnabled').addEventListener('change', (e) => {
-      if (e.target.checked && !this.settings.premiumStatus) {
-        this.showPremiumReminder();
-      }
+    // Notifications + quiet hours (available to everyone)
+    document.getElementById('notificationsEnabled').addEventListener('change', () => {
       this.scheduleAutoSaveGeneral();
+    });
+    ['quietHoursEnabled', 'quietHoursStart', 'quietHoursEnd'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', () => {
+        this.scheduleAutoSaveGeneral();
+      });
     });
 
     document.getElementById('theme').addEventListener('change', (e) => {
@@ -249,6 +251,9 @@ class OptionsManager {
     // Premium features
     document.getElementById('premiumStatus').checked = this.settings.premiumStatus || false;
     document.getElementById('notificationsEnabled').checked = this.settings.notificationsEnabled || false;
+    document.getElementById('quietHoursEnabled').checked = this.settings.quietHours?.enabled || false;
+    document.getElementById('quietHoursStart').value = this.settings.quietHours?.start || '22:00';
+    document.getElementById('quietHoursEnd').value = this.settings.quietHours?.end || '08:00';
     document.getElementById('theme').value = this.settings.theme || 'default';
 
     // Custom theme values
@@ -361,6 +366,11 @@ class OptionsManager {
           ? document.getElementById('fallbackCategory').value.trim() 
           : '',
         notificationsEnabled: document.getElementById('notificationsEnabled').checked,
+        quietHours: {
+          enabled: document.getElementById('quietHoursEnabled').checked,
+          start: document.getElementById('quietHoursStart').value || '22:00',
+          end: document.getElementById('quietHoursEnd').value || '08:00',
+        },
         theme: document.getElementById('theme').value,
       };
 
