@@ -13,10 +13,8 @@ import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils
 
 class BackgroundWorker {
   constructor() {
-    this.pollInterval = null;
     this.currentWatchingStream = null;
     this.lastPollTime = 0;
-    this.isPolling = false;
     this.idleState = 'active';
     this.settings = null;
     this.snoozeUntil = 0;
@@ -153,8 +151,8 @@ class BackgroundWorker {
   }
 
   startPolling() {
-    // Don't poll if already polling or idle
-    if (this.isPolling || this.idleState === 'idle' || this.idleState === 'locked') {
+    // Don't schedule while idle/locked; resumes via handleIdleStateChange.
+    if (this.idleState === 'idle' || this.idleState === 'locked') {
       return;
     }
 
@@ -163,24 +161,19 @@ class BackgroundWorker {
       return;
     }
 
-    this.isPolling = true;
-
     // Poll immediately
     this.pollStreams();
 
-    // Then poll at configured interval
+    // chrome.alarms (not setInterval): MV3 kills idle service workers ~30s
+    // after the last event, taking timers with them. Alarms persist and
+    // re-wake the worker on schedule. Minimum period is 1 minute, which
+    // matches the smallest configurable check interval.
     const interval = this.settings?.checkInterval || 60000;
-    this.pollInterval = setInterval(() => {
-      this.pollStreams();
-    }, interval);
+    chrome.alarms.create('tsr-poll', { periodInMinutes: Math.max(1, interval / 60000) });
   }
 
   stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
-    this.isPolling = false;
+    chrome.alarms.clear('tsr-poll');
   }
 
   async pollStreams() {
@@ -659,6 +652,23 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       worker.updateBadge({ enabled: false, liveCount: 0 });
     })
     .catch((e) => console.warn('Failed to disable Auto-Swap on tab close:', e));
+});
+
+// Poll alarm — fires even after the service worker was suspended, and firing
+// re-wakes the worker (the whole point of using alarms over setInterval).
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== 'tsr-poll') return;
+  worker.init()
+    .then(() => {
+      if (worker.idleState === 'idle' || worker.idleState === 'locked') return;
+      return worker.pollStreams();
+    })
+    .catch((e) => console.warn('Alarm poll failed:', e));
+});
+
+// Browser restart: re-establish polling.
+chrome.runtime.onStartup.addListener(() => {
+  worker.init().catch((e) => console.error('Startup initialization failed:', e));
 });
 
 // Initialize on service worker startup
