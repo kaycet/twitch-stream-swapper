@@ -42,6 +42,14 @@ describe('StorageManager cache invalidation', () => {
     const a2 = await storage.getStreams();
     expect(a2[0].username).toBe('b');
   });
+
+  it('persists settings immediately, without waiting for the debounce flush', async () => {
+    // The popup/options page can close (and the MV3 service worker can
+    // suspend) within the 300ms debounce window, so saveSettings must hit
+    // chrome.storage before it resolves.
+    await storage.saveSettings({ theme: 'midnight' });
+    expect(store.get('settings')?.theme).toBe('midnight');
+  });
 });
 
 

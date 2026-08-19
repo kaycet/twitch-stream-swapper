@@ -49,6 +49,42 @@ describe('TwitchAPI request retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('retries network failures and succeeds once the network recovers', async () => {
+    const okResponse = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => null },
+      json: async () => ({ data: [] }),
+    };
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(okResponse);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = twitchAPI._request('/streams?user_login=somechannel', {}, 3);
+    await vi.runAllTimersAsync();
+
+    await expect(request).resolves.toEqual({ data: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries timeouts (AbortError) and reports TIMEOUT when they persist', async () => {
+    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    const fetchMock = vi.fn(async () => { throw abortError; });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = twitchAPI._request('/streams?user_login=somechannel', {}, 2);
+    const assertion = expect(request).rejects.toMatchObject({ code: 'TIMEOUT' });
+
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    // Initial attempt + 2 retries, then give up with a coded error.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('does not retry non-retryable errors (401)', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: false,

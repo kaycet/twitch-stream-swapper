@@ -119,16 +119,14 @@ class TwitchAPI {
       this.cache.delete(cacheKey);
     }
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
+    try {
       const response = await fetch(url, {
         headers: this._getHeaders(),
         signal: controller.signal
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         // Best-effort parse error payload for better diagnostics (especially from the token broker).
@@ -215,29 +213,33 @@ class TwitchAPI {
 
       return data;
     } catch (error) {
-      // Handle network errors
-      if (error.name === 'AbortError' || error.message.includes('timeout')) {
-        const timeoutError = new Error('Request timed out. Please check your internet connection.');
-        timeoutError.code = 'TIMEOUT';
-        throw timeoutError;
-      }
-
-      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        const networkError = new Error('Network connection failed. Please check your internet connection.');
-        networkError.code = 'NETWORK_ERROR';
-        throw networkError;
+      // Normalize network-level failures to coded errors first, so the retry
+      // branch below can see them (they used to be thrown before it ran,
+      // making TIMEOUT/NETWORK_ERROR effectively non-retryable).
+      let normalized = error;
+      const message = String(error?.message || '');
+      if (error.name === 'AbortError' || message.includes('timeout')) {
+        normalized = new Error('Request timed out. Please check your internet connection.');
+        normalized.code = 'TIMEOUT';
+      } else if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+        normalized = new Error('Network connection failed. Please check your internet connection.');
+        normalized.code = 'NETWORK_ERROR';
       }
 
       // Retry logic for retryable errors
       if (retries > 0 &&
-          (!error.code || ['SERVER_ERROR', 'TIMEOUT', 'NETWORK_ERROR'].includes(error.code))) {
+          (!normalized.code || ['SERVER_ERROR', 'TIMEOUT', 'NETWORK_ERROR'].includes(normalized.code))) {
         // Exponential backoff
         const delay = Math.pow(2, 3 - retries) * 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
         return this._request(endpoint, params, retries - 1);
       }
 
-      throw error;
+      throw normalized;
+    } finally {
+      // Also covers the paths where fetch itself rejects, which previously
+      // left the 30s abort timer running.
+      clearTimeout(timeoutId);
     }
   }
 
