@@ -174,6 +174,15 @@ class BackgroundWorker {
 
   stopPolling() {
     chrome.alarms.clear('tsr-poll');
+    chrome.alarms.clear('tsr-poll-retry');
+  }
+
+  scheduleRetry(delayMs) {
+    // One-shot alarm, not setTimeout: MV3 suspends the service worker and
+    // takes timers with it, which would leave polling stopped forever after
+    // a transient error. Alarms have a 1-minute floor, which matches the
+    // shortest retry delay we use anyway.
+    chrome.alarms.create('tsr-poll-retry', { delayInMinutes: Math.max(1, delayMs / 60000) });
   }
 
   async pollStreams() {
@@ -319,29 +328,17 @@ class BackgroundWorker {
         // For rate limits, wait longer before retry
         this.stopPolling();
         const retryDelay = error.retryAfter ? error.retryAfter * 1000 : 120000; // 2 minutes default
-        setTimeout(() => {
-          if (this.idleState === 'active') {
-            this.startPolling();
-          }
-        }, retryDelay);
+        this.scheduleRetry(retryDelay);
         console.warn('Rate limit hit - will retry after delay');
       } else if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
         // Network errors - retry after shorter delay
         this.stopPolling();
-        setTimeout(() => {
-          if (this.idleState === 'active') {
-            this.startPolling();
-          }
-        }, 60000); // Wait 1 minute before retry
+        this.scheduleRetry(60000); // Wait 1 minute before retry
         console.warn('Network error - will retry in 1 minute');
       } else {
-        // Other errors - exponential backoff
+        // Other errors
         this.stopPolling();
-        setTimeout(() => {
-          if (this.idleState === 'active') {
-            this.startPolling();
-          }
-        }, 60000); // Wait 1 minute before retry
+        this.scheduleRetry(60000); // Wait 1 minute before retry
         console.warn('Error occurred - will retry in 1 minute');
       }
     }
@@ -657,10 +654,16 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Poll alarm — fires even after the service worker was suspended, and firing
 // re-wakes the worker (the whole point of using alarms over setInterval).
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== 'tsr-poll') return;
+  if (alarm.name !== 'tsr-poll' && alarm.name !== 'tsr-poll-retry') return;
   worker.init()
     .then(() => {
       if (worker.idleState === 'idle' || worker.idleState === 'locked') return;
+      if (alarm.name === 'tsr-poll-retry') {
+        // Error-recovery alarm: re-establish the periodic poll (which also
+        // polls immediately).
+        worker.startPolling();
+        return;
+      }
       return worker.pollStreams();
     })
     .catch((e) => console.warn('Alarm poll failed:', e));
