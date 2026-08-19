@@ -193,7 +193,10 @@ class StorageManager {
    */
   async saveSettings(settings) {
     const current = await this.getSettings();
-    await this.set({ settings: { ...current, ...settings } });
+    // Immediate write: settings saves come from the popup/options pages, which
+    // can close (and the MV3 service worker can suspend) before a debounced
+    // flush fires — a debounced write here silently drops the user's change.
+    await this.set({ settings: { ...current, ...settings } }, true);
   }
 
   /**
