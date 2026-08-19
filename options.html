@@ -10,14 +10,14 @@
 <body>
   <div class="container">
     <header>
-      <h1>⚙️ Settings</h1>
-      <a href="popup.html" class="back-link">← Back to Extension</a>
+      <h1 class="wordmark">Settings</h1>
+      <a href="popup.html" class="back-link">← Back to extension</a>
     </header>
 
     <div class="content">
       <!-- Basic Settings -->
-      <section class="settings-section">
-        <h2>Basic Settings</h2>
+      <section class="settings-section settings-card">
+        <h2 class="eyebrow">Basic settings</h2>
         
         <div class="setting-item">
           <label for="checkInterval">
@@ -54,8 +54,8 @@
       </section>
 
       <!-- Category Fallback -->
-      <section class="settings-section">
-        <h2>Category Fallback</h2>
+      <section class="settings-section settings-card">
+        <h2 class="eyebrow">Category fallback</h2>
         <p class="section-description">When no streams in your list are live, show a random stream from a category</p>
         
         <div class="setting-item">
@@ -83,9 +83,9 @@
       </section>
 
       <!-- Supporter Features -->
-      <section class="settings-section premium-section">
-        <h2>
-          Supporter Features <span class="premium-badge">⭐</span>
+      <section class="settings-section premium-section settings-card">
+        <h2 class="eyebrow">
+          Supporter features <span class="premium-badge chip">★ Supporter</span>
         </h2>
         <p class="section-description">
           Honor system: if you support development, feel free to enable these. If you can’t right now, no worries.
@@ -172,15 +172,15 @@
         </div>
 
         <div class="premium-reminder" id="premiumReminder" style="display: none;">
-          <p>💡 <strong>Supporter Feature:</strong> Enable Supporter Features (honor system) to use this.</p>
+          <p><strong>Supporter feature:</strong> enable Supporter features (honor system) to use this.</p>
         </div>
       </section>
 
       <!-- Analytics (Supporter) -->
-      <section class="settings-section premium-section" id="analyticsSection" style="display: none;">
-        <h2>
+      <section class="settings-section premium-section settings-card" id="analyticsSection" style="display: none;">
+        <h2 class="eyebrow">
           Analytics
-          <span class="premium-badge">⭐</span>
+          <span class="premium-badge chip">★ Supporter</span>
         </h2>
 
         <div id="analyticsContent">
@@ -205,15 +205,16 @@
       </section>
 
       <!-- Donations -->
-      <section class="settings-section donation-section">
-        <h2>💝 Support the Developer</h2>
+      <section class="settings-section donation-section settings-card">
+        <h2 class="eyebrow">Support the developer</h2>
         <p class="section-description">
           Love this extension? Consider supporting development on Ko-fi.
         </p>
 
         <div class="donation-buttons">
           <a id="kofiBtn" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-donation kofi">
-            ☕ Support on Ko-fi
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 13.5C5 11 2 8.8 2 6a3 3 0 0 1 6-.5A3 3 0 0 1 14 6c0 2.8-3 5-6 7.5Z"/></svg>
+            Support on Ko-fi
           </a>
         </div>
 
@@ -225,8 +226,8 @@
       </section>
 
       <!-- Advanced -->
-      <section class="settings-section">
-        <h2>Advanced</h2>
+      <section class="settings-section settings-card">
+        <h2 class="eyebrow">Advanced</h2>
         <details class="advanced-details">
           <summary>Developer / Power-user settings</summary>
           <p class="section-description">
