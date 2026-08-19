@@ -3,6 +3,7 @@ import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
+import { formatViewers, formatUptime } from './utils/format.js';
 
 class PopupManager {
   constructor() {
@@ -607,20 +608,51 @@ class PopupManager {
     item.dataset.priority = stream.priority;
 
     const isLive = stream.isLive || false;
+    const notifyOn = stream.notify !== false;
+    const data = isLive ? stream.streamData : null;
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+
+    const metaParts = [];
+    if (data?.game_name) metaParts.push(esc(data.game_name));
+    const viewers = formatViewers(data?.viewer_count);
+    if (viewers) metaParts.push(viewers);
+    const uptime = formatUptime(data?.started_at);
+    if (uptime) metaParts.push(uptime);
+
+    const statusLine = isLive && data?.title
+      ? `<span class="stream-title" title="${esc(data.title)}">${esc(data.title)}</span>`
+      : `<span>${isLive ? 'Live' : 'Offline'}</span>`;
+
+    const bellIcon = notifyOn
+      ? '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2a3.6 3.6 0 0 0-3.6 3.6c0 3-1.2 4-1.9 4.6h11c-.7-.6-1.9-1.6-1.9-4.6A3.6 3.6 0 0 0 8 2ZM6.6 12.5a1.5 1.5 0 0 0 2.8 0"/></svg>'
+      : '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2a3.6 3.6 0 0 0-3.6 3.6c0 3-1.2 4-1.9 4.6h11c-.7-.6-1.9-1.6-1.9-4.6A3.6 3.6 0 0 0 8 2ZM6.6 12.5a1.5 1.5 0 0 0 2.8 0M2.5 2.5l11 11"/></svg>';
 
     item.innerHTML = `
       <div class="stream-handle">☰</div>
       <div class="stream-info">
-        <div class="stream-username">${stream.username}</div>
+        <div class="stream-username">${esc(stream.username)}</div>
         <div class="stream-status">
           <span class="status-indicator ${isLive ? 'live' : ''}"></span>
-          <span>${isLive ? 'Live' : 'Offline'}</span>
+          ${statusLine}
         </div>
+        ${metaParts.length > 0 ? `<div class="stream-meta">${metaParts.join(' · ')}</div>` : ''}
       </div>
       <div class="stream-actions">
+        <button class="action-btn notify-btn ${notifyOn ? '' : 'muted'}" data-action="notify"
+          aria-pressed="${notifyOn}"
+          title="${notifyOn ? 'Notifications on — click to mute' : 'Notifications muted — click to unmute'}">${bellIcon}</button>
         <button class="action-btn" data-action="remove" title="Remove">×</button>
       </div>
     `;
+
+    // Notification bell
+    item.querySelector('[data-action="notify"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleNotify(stream.username);
+    });
 
     // Remove button
     item.querySelector('[data-action="remove"]').addEventListener('click', (e) => {
@@ -629,6 +661,14 @@ class PopupManager {
     });
 
     return item;
+  }
+
+  async toggleNotify(username) {
+    const stream = this.streams.find((s) => s.username === username);
+    if (!stream) return;
+    stream.notify = stream.notify === false;
+    await storage.saveStreams(this.streams);
+    this.render();
   }
 
   setupDragAndDrop() {
