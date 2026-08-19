@@ -1,0 +1,48 @@
+/*
+ * Token contract — the ONLY place raw colors/sizes live.
+ * Theme files (dark.css, neon.css) and the custom-theme picker override
+ * these same names. Themable tokens: everything in this :root block.
+ */
+:root {
+  /* Surfaces (violet-cast ink) */
+  --surface-0: #0c0b10;
+  --surface-1: #16141c;
+  --surface-2: #201d28;
+  --border: #2b2734;
+  --border-strong: #3a3547;
+
+  /* Text */
+  --text: #efeff4;
+  --text-muted: #a9a5b8;
+  --text-dim: #6f6a80;
+
+  /* Accent */
+  --accent: #9146ff;
+  --accent-hover: #a970ff;
+  --on-accent: #ffffff;
+
+  /* Semantic */
+  --live: #eb0400;
+  --success: #00c767;
+  --danger: #f23a3a;
+  --warning: #ffb31a;
+
+  /* Geometry */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Type */
+  --font-ui: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-data: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+}
