@@ -1,27 +1,15 @@
-/* Neon Theme - Supporter Feature */
+/* Neon theme (supporter) — cyan on violet. Token overrides only. */
 :root {
-  --bg: #0a0520;
-  --panel: #0f0630;
-  --panel-2: #120530;
-  --border: #9147ff;
+  --surface-0: #0a0520;
+  --surface-1: #0f0630;
+  --surface-2: #150a3a;
+  --border: #9146ff;
+  --border-strong: #a970ff;
   --text: #00ffff;
-  --muted: rgba(0, 255, 255, 0.75);
-  --purple-accent: #00ffff;
-  --purple-accent-hover: #62ffff;
+  --text-muted: rgba(0, 255, 255, 0.75);
+  --text-dim: rgba(0, 255, 255, 0.5);
+  --accent: #00ffff;
+  --accent-hover: #62ffff;
+  --on-accent: #0a0520;
+  --live: #ff2e88;
 }
-
-/* Keep a bit of neon flair */
-.btn-primary {
-  background: linear-gradient(135deg, #9147ff 0%, #00ffff 100%);
-  box-shadow: 0 0 15px rgba(145, 71, 255, 0.5);
-}
-
-.btn-primary:hover {
-  box-shadow: 0 0 20px rgba(0, 255, 255, 0.7);
-}
-
-.status-indicator.live {
-  background: #00ffff;
-  box-shadow: 0 0 10px #00ffff;
-}
-

@@ -1,12 +1,11 @@
-/* Dark Theme - Supporter Feature */
+/* Dark theme (supporter) — deeper neutral black. Token overrides only. */
 :root {
-  --bg: #0a0a0a;
-  --panel: #0f0f10;
-  --panel-2: #141416;
+  --surface-0: #0a0a0a;
+  --surface-1: #101012;
+  --surface-2: #17171a;
   --border: #232327;
+  --border-strong: #33333a;
   --text: #e9e9ee;
-  --muted: #b4b4c0;
-  --purple-accent: #9147ff;
-  --purple-accent-hover: #772ce8;
+  --text-muted: #b4b4c0;
+  --text-dim: #77777f;
 }
-

@@ -591,27 +591,27 @@ class OptionsManager {
     const set = (name, value) => {
       if (value) root.style.setProperty(name, value);
     };
-    set('--purple-accent', t.accent);
-    set('--purple-accent-hover', t.accentHover || t.accent);
-    set('--bg', t.bg);
-    set('--panel', t.panel);
-    set('--panel-2', t.panel2 || t.panel);
+    set('--accent', t.accent);
+    set('--accent-hover', t.accentHover || t.accent);
+    set('--surface-0', t.bg);
+    set('--surface-1', t.panel);
+    set('--surface-2', t.panel2 || t.panel);
     set('--border', t.border);
     set('--text', t.text);
-    set('--muted', t.muted || '#adadb8');
+    set('--text-muted', t.muted || '#adadb8');
   }
 
   clearCustomThemeVars() {
     const root = document.documentElement;
     [
-      '--purple-accent',
-      '--purple-accent-hover',
-      '--bg',
-      '--panel',
-      '--panel-2',
+      '--accent',
+      '--accent-hover',
+      '--surface-0',
+      '--surface-1',
+      '--surface-2',
       '--border',
       '--text',
-      '--muted'
+      '--text-muted'
     ].forEach((k) => root.style.removeProperty(k));
   }
 
