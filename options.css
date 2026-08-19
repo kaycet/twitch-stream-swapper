@@ -263,6 +263,31 @@ input[type="color"] {
   border-color: var(--danger);
 }
 
+/* Quiet hours */
+.quiet-hours-times {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.time-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+input[type="time"] {
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color-scheme: dark;
+}
+
 /* Analytics */
 .analytics-stats {
   display: flex;
