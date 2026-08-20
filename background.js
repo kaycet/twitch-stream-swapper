@@ -8,6 +8,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
 import { isQuietHours } from './utils/quiet-hours.js';
+import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 
@@ -318,29 +319,13 @@ class BackgroundWorker {
     } catch (error) {
       console.error('Error polling streams:', error);
 
-      // Handle different error types (message may be missing on non-Error throws)
-      const errorMessage = String(error?.message || '');
-      if (error.code === 'AUTH_ERROR' || errorMessage.includes('Client ID') || errorMessage.includes('401')) {
-        // Stop polling for auth errors (usually token broker/CORS/backend issues in production)
-        this.stopPolling();
-        console.error('Authentication error - polling stopped. Verify token broker is online and CORS allows the extension origin.');
-      } else if (error.code === 'RATE_LIMIT') {
-        // For rate limits, wait longer before retry
-        this.stopPolling();
-        const retryDelay = error.retryAfter ? error.retryAfter * 1000 : 120000; // 2 minutes default
-        this.scheduleRetry(retryDelay);
-        console.warn('Rate limit hit - will retry after delay');
-      } else if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
-        // Network errors - retry after shorter delay
-        this.stopPolling();
-        this.scheduleRetry(60000); // Wait 1 minute before retry
-        console.warn('Network error - will retry in 1 minute');
-      } else {
-        // Other errors
-        this.stopPolling();
-        this.scheduleRetry(60000); // Wait 1 minute before retry
-        console.warn('Error occurred - will retry in 1 minute');
-      }
+      // Every error class retries. The old code stopped polling permanently
+      // on AUTH_ERROR, so one transient token-broker hiccup killed auto-swap
+      // until the extension was reloaded.
+      this.stopPolling();
+      const retryDelay = retryDelayMs(error);
+      this.scheduleRetry(retryDelay);
+      console.warn(`Poll failed (${error?.code || 'UNKNOWN'}) - retrying in ${Math.round(retryDelay / 60000)} minute(s)`);
     }
   }
 
