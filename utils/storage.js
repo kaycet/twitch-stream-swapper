@@ -11,6 +11,19 @@ class StorageManager {
     this.saveQueue = new Map();
     this.saveTimeout = null;
     this.DEBOUNCE_DELAY = 300; // ms
+
+    // Each extension context (background/popup/options) has its own
+    // StorageManager, so writes from other contexts never pass through this
+    // instance's set() and would leave this cache stale. Without this
+    // listener, the background's mid-poll re-read of the streams list could
+    // return a cached pre-edit copy and write it back, silently discarding
+    // a stream the user just added in the popup.
+    const onChanged = globalThis.chrome?.storage?.onChanged;
+    if (onChanged?.addListener) {
+      onChanged.addListener((changes, area) => {
+        if (area === 'local') this.cache.clear();
+      });
+    }
   }
 
   /**
@@ -64,7 +77,9 @@ class StorageManager {
     }
 
     this.saveTimeout = setTimeout(() => {
-      this._flush();
+      // _flush already logs failures; swallow here so a failed debounced
+      // write doesn't surface as an unhandled promise rejection.
+      this._flush().catch(() => {});
     }, this.DEBOUNCE_DELAY);
   }
 
