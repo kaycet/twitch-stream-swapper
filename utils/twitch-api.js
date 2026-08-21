@@ -11,6 +11,7 @@ class TwitchAPI {
     this.proxyEnabled = false;
     this.cache = new Map();
     this.cacheTTL = 30000; // 30 seconds
+    this.MAX_CACHE_ENTRIES = 200;
     this.rateLimitQueue = [];
     this.rateLimitDelay = 0;
     this.requestCount = 0;
@@ -210,6 +211,7 @@ class TwitchAPI {
         data,
         timestamp: Date.now()
       });
+      this._pruneCache();
 
       return data;
     } catch (error) {
@@ -397,6 +399,31 @@ class TwitchAPI {
     } catch (error) {
       console.error('Error getting random stream:', error);
       return null;
+    }
+  }
+
+  /**
+   * Drop expired entries (and oldest overflow) once the cache exceeds its cap.
+   * Entries were otherwise only evicted when their exact URL was re-requested,
+   * so long-lived pages hitting many distinct URLs (e.g. the category
+   * typeahead in Options) grew the cache without bound.
+   * @private
+   */
+  _pruneCache() {
+    if (this.cache.size <= this.MAX_CACHE_ENTRIES) return;
+
+    const now = Date.now();
+    for (const [key, entry] of this.cache) {
+      if (now - entry.timestamp >= this.cacheTTL) {
+        this.cache.delete(key);
+      }
+    }
+
+    // Still over the cap: Maps iterate in insertion order, so drop oldest first.
+    let excess = this.cache.size - this.MAX_CACHE_ENTRIES;
+    for (const key of this.cache.keys()) {
+      if (excess-- <= 0) break;
+      this.cache.delete(key);
     }
   }
 
