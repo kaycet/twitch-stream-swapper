@@ -350,6 +350,15 @@ class BackgroundWorker {
   async promptBeforeSwitch(stream) {
     if (Date.now() < this.snoozeUntil) return;
 
+    // Re-prompting on every poll would stack a new notification each interval
+    // and orphan the previous ones (their buttons no longer match the stored
+    // pendingSwitch). Keep at most one outstanding prompt per target.
+    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
+    if (pendingSwitch?.username === stream.username
+        && Date.now() - (pendingSwitch.createdAt || 0) < 5 * 60 * 1000) {
+      return;
+    }
+
     const notificationId = `tsr_autoswap_${Date.now()}`;
     await chrome.storage.local.set({
       pendingSwitch: {

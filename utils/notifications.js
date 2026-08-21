@@ -5,6 +5,37 @@
 import { formatViewers } from './format.js';
 
 class NotificationManager {
+  constructor() {
+    // notificationId -> channel username. The delegated listeners below
+    // consult this map instead of registering a fresh listener pair per
+    // notification, which leaked listeners for every notification that was
+    // dismissed or ignored (they were only removed on click).
+    this._liveNotificationTargets = new Map();
+    this._registerListeners();
+  }
+
+  _registerListeners() {
+    const notifications = globalThis.chrome?.notifications;
+    if (!notifications?.onClicked?.addListener) return;
+
+    const openTarget = (id) => {
+      const username = this._liveNotificationTargets.get(id);
+      if (!username) return;
+      chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
+      chrome.notifications.clear(id);
+      this._liveNotificationTargets.delete(id);
+    };
+
+    notifications.onClicked.addListener(openTarget);
+    notifications.onButtonClicked.addListener((id, buttonIndex) => {
+      if (buttonIndex === 0) openTarget(id);
+    });
+    // Dismissed/expired notifications can never be clicked again; drop them.
+    notifications.onClosed.addListener((id) => {
+      this._liveNotificationTargets.delete(id);
+    });
+  }
+
   /**
    * Request notification permission
    * @returns {Promise<boolean>}
@@ -59,6 +90,9 @@ class NotificationManager {
       const viewers = formatViewers(viewerCount);
       if (viewers) contextParts.push(`${viewers} viewers`);
 
+      // Register the target before create() so a click can never race the map update.
+      this._liveNotificationTargets.set(notificationId, username);
+
       await chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: iconUrl,
@@ -70,26 +104,6 @@ class NotificationManager {
         ],
         requireInteraction: false
       });
-
-      // Setup one-time listeners for this notification
-      const buttonHandler = (id, buttonIndex) => {
-        if (id === notificationId && buttonIndex === 0) {
-          chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
-          chrome.notifications.clear(id);
-          chrome.notifications.onButtonClicked.removeListener(buttonHandler);
-        }
-      };
-
-      const clickHandler = (id) => {
-        if (id === notificationId) {
-          chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
-          chrome.notifications.clear(id);
-          chrome.notifications.onClicked.removeListener(clickHandler);
-        }
-      };
-
-      chrome.notifications.onButtonClicked.addListener(buttonHandler);
-      chrome.notifications.onClicked.addListener(clickHandler);
     } catch (error) {
       console.error('Error showing notification:', error);
     }
