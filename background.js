@@ -350,6 +350,23 @@ class BackgroundWorker {
   async promptBeforeSwitch(stream) {
     if (Date.now() < this.snoozeUntil) return;
 
+    // Don't stack prompts: polling runs every minute, and re-creating the
+    // notification each poll spams the user and orphans the previous prompt
+    // (its buttons stop working because pendingSwitch points at the new id).
+    const PROMPT_TTL_MS = 10 * 60 * 1000;
+    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
+    if (pendingSwitch) {
+      const age = Date.now() - (pendingSwitch.createdAt || 0);
+      if (pendingSwitch.username === stream.username && age < PROMPT_TTL_MS) {
+        return;
+      }
+      // Replacing a stale prompt or one for a different target: clear its
+      // notification so what's on screen always matches pendingSwitch.
+      if (pendingSwitch.notificationId) {
+        chrome.notifications.clear(pendingSwitch.notificationId);
+      }
+    }
+
     const notificationId = `tsr_autoswap_${Date.now()}`;
     await chrome.storage.local.set({
       pendingSwitch: {

@@ -506,10 +506,19 @@ class PopupManager {
   updateActionBadge(enabled) {
     try {
       if (!chrome?.action) return;
+      // Mirror the background worker's badge scheme (live count + purple/gray)
+      // so the badge doesn't flip between two different styles on each poll.
       const on = !!enabled;
-      chrome.action.setBadgeText({ text: on ? 'ON' : '' });
-      chrome.action.setBadgeBackgroundColor({ color: on ? '#00dc82' : '#5c5c66' });
-      chrome.action.setTitle({ title: on ? 'Auto-Swap ON' : 'Auto-Swap OFF' });
+      const liveStreams = this.streams.filter((s) => s.isLive);
+      const count = liveStreams.length;
+      const target = liveStreams[0]?.username || null;
+      const title = on
+        ? (target ? `${count} live — watching ${target}` : 'Auto-Swap ON — no one live')
+        : (count > 0 ? `Auto-Swap off — ${count} live` : 'Auto-Swap off');
+
+      chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
+      chrome.action.setBadgeBackgroundColor({ color: on ? '#9146ff' : '#5c5c66' });
+      chrome.action.setTitle({ title });
     } catch {
       // Non-fatal
     }
@@ -895,15 +904,26 @@ class PopupManager {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
         const isLive = statuses[stream.username] != null;
-        
-        if (wasLive !== isLive) {
-          stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
+        const newData = statuses[stream.username] || null;
+        const prevData = stream.streamData || null;
+
+        // Always refresh metadata, not just on live-state flips — otherwise
+        // title/viewers/game freeze at their first values while a stream
+        // stays live.
+        stream.isLive = isLive;
+        stream.streamData = newData;
+
+        if (wasLive !== isLive
+            || prevData?.title !== newData?.title
+            || prevData?.viewer_count !== newData?.viewer_count
+            || prevData?.game_name !== newData?.game_name) {
           hasChanges = true;
         }
       });
 
-      if (hasChanges) {
+      // Skip re-render mid-drag: render() rebuilds the list items, which
+      // would break an in-progress reorder.
+      if (hasChanges && !this.draggedElement) {
         this.render();
       }
 

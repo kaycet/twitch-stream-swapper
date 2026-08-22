@@ -59,7 +59,7 @@ class NotificationManager {
       const viewers = formatViewers(viewerCount);
       if (viewers) contextParts.push(`${viewers} viewers`);
 
-      await chrome.notifications.create(notificationId, {
+      const options = {
         type: 'basic',
         iconUrl: iconUrl,
         title: `${username} is now live!`,
@@ -69,14 +69,36 @@ class NotificationManager {
           { title: 'Watch Now' }
         ],
         requireInteraction: false
-      });
+      };
 
-      // Setup one-time listeners for this notification
+      try {
+        await chrome.notifications.create(notificationId, options);
+      } catch (createError) {
+        // Chrome can't always download remote thumbnail images for
+        // notifications ("Unable to download all specified images"), which
+        // rejects create() and silently drops the notification. Fall back to
+        // the bundled icon so the alert still shows.
+        if (options.iconUrl !== 'icons/icon-128.png') {
+          options.iconUrl = 'icons/icon-128.png';
+          await chrome.notifications.create(notificationId, options);
+        } else {
+          throw createError;
+        }
+      }
+
+      // Setup one-time listeners for this notification. Whichever way the
+      // notification is used (body click or button), remove both listeners so
+      // they don't accumulate across notifications.
+      const removeHandlers = () => {
+        chrome.notifications.onButtonClicked.removeListener(buttonHandler);
+        chrome.notifications.onClicked.removeListener(clickHandler);
+      };
+
       const buttonHandler = (id, buttonIndex) => {
         if (id === notificationId && buttonIndex === 0) {
           chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
           chrome.notifications.clear(id);
-          chrome.notifications.onButtonClicked.removeListener(buttonHandler);
+          removeHandlers();
         }
       };
 
@@ -84,7 +106,7 @@ class NotificationManager {
         if (id === notificationId) {
           chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
           chrome.notifications.clear(id);
-          chrome.notifications.onClicked.removeListener(clickHandler);
+          removeHandlers();
         }
       };
 
