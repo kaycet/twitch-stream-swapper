@@ -4,6 +4,7 @@ import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
+import { badgeState } from './utils/badge.js';
 
 class PopupManager {
   constructor() {
@@ -506,10 +507,17 @@ class PopupManager {
   updateActionBadge(enabled) {
     try {
       if (!chrome?.action) return;
-      const on = !!enabled;
-      chrome.action.setBadgeText({ text: on ? 'ON' : '' });
-      chrome.action.setBadgeBackgroundColor({ color: on ? '#00dc82' : '#5c5c66' });
-      chrome.action.setTitle({ title: on ? 'Auto-Swap ON' : 'Auto-Swap OFF' });
+      // Same format as the background worker's badge (shared helper), so the
+      // badge doesn't flip to a different style while the popup is open.
+      const liveStreams = this.streams.filter((s) => s.isLive);
+      const { text, color, title } = badgeState({
+        enabled,
+        liveCount: liveStreams.length,
+        target: liveStreams[0]?.username || null,
+      });
+      chrome.action.setBadgeText({ text });
+      chrome.action.setBadgeBackgroundColor({ color });
+      chrome.action.setTitle({ title });
     } catch {
       // Non-fatal
     }

@@ -11,6 +11,7 @@ import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
+import { badgeState } from './utils/badge.js';
 
 class BackgroundWorker {
   constructor() {
@@ -124,14 +125,7 @@ class BackgroundWorker {
     try {
       if (!chrome?.action) return;
 
-      const on = !!enabled;
-      const count = Number(liveCount) || 0;
-      const text = count > 0 ? String(count) : '';
-      // Purple = Auto-Swap on, gray = off; the count stays glanceable either way.
-      const color = on ? '#9146ff' : '#5c5c66';
-      const title = on
-        ? (target ? `${count} live — watching ${target}` : 'Auto-Swap ON — no one live')
-        : (count > 0 ? `Auto-Swap off — ${count} live` : 'Auto-Swap off');
+      const { text, color, title } = badgeState({ enabled, liveCount, target });
 
       chrome.action.setBadgeText({ text });
       chrome.action.setBadgeBackgroundColor({ color });
@@ -303,7 +297,7 @@ class BackgroundWorker {
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
-        await this.handleAutoSwitch(highestPriorityLive, prioritized);
+        await this.handleAutoSwitch(highestPriorityLive);
       }
 
       // Handle category fallback if no streams are live
