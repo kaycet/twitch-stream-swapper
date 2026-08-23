@@ -903,10 +903,19 @@ class PopupManager {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
         const isLive = statuses[stream.username] != null;
-        
-        if (wasLive !== isLive) {
+        const newData = statuses[stream.username] || null;
+
+        // Refresh metadata for streams that stay live too — otherwise the
+        // title/viewers/uptime shown in the list freeze at their first values.
+        const dataChanged = isLive && (
+          stream.streamData?.title !== newData?.title ||
+          stream.streamData?.game_name !== newData?.game_name ||
+          stream.streamData?.viewer_count !== newData?.viewer_count
+        );
+
+        if (wasLive !== isLive || dataChanged) {
           stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
+          stream.streamData = newData;
           hasChanges = true;
         }
       });
