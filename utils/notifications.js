@@ -4,6 +4,42 @@
 
 import { formatViewers } from './format.js';
 
+const LIVE_NOTIFICATION_PREFIX = 'stream-live-';
+
+/**
+ * Extract the streamer username from a live-notification id
+ * (`stream-live-<username>-<timestamp>`). Returns null for other ids.
+ * @param {string} notificationId
+ * @returns {string|null}
+ */
+export function usernameFromNotificationId(notificationId) {
+  if (typeof notificationId !== 'string') return null;
+  const match = /^stream-live-([A-Za-z0-9_]+)-\d+$/.exec(notificationId);
+  return match ? match[1] : null;
+}
+
+function openStreamFromNotification(notificationId) {
+  const username = usernameFromNotificationId(notificationId);
+  if (!username) return;
+  chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
+  chrome.notifications.clear(notificationId);
+}
+
+// Click handlers MUST be registered at module top level: MV3 suspends the
+// service worker ~30s after the last event, dropping any listeners that were
+// added dynamically inside notifyStreamLive(). A click then re-wakes the
+// worker and re-runs this module, so top-level listeners are always present.
+// (The old per-notification listeners also leaked — they were only removed
+// when their own notification was clicked, never when it was dismissed.)
+if (globalThis.chrome?.notifications) {
+  chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
+    if (buttonIndex === 0) openStreamFromNotification(id);
+  });
+  chrome.notifications.onClicked.addListener((id) => {
+    openStreamFromNotification(id);
+  });
+}
+
 class NotificationManager {
   /**
    * Request notification permission
@@ -31,7 +67,7 @@ class NotificationManager {
     }
 
     try {
-      const notificationId = `stream-live-${username}-${Date.now()}`;
+      const notificationId = `${LIVE_NOTIFICATION_PREFIX}${username}-${Date.now()}`;
       
       // Validate thumbnail URL or use default
       let iconUrl = 'icons/icon-128.png';
@@ -70,26 +106,8 @@ class NotificationManager {
         ],
         requireInteraction: false
       });
-
-      // Setup one-time listeners for this notification
-      const buttonHandler = (id, buttonIndex) => {
-        if (id === notificationId && buttonIndex === 0) {
-          chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
-          chrome.notifications.clear(id);
-          chrome.notifications.onButtonClicked.removeListener(buttonHandler);
-        }
-      };
-
-      const clickHandler = (id) => {
-        if (id === notificationId) {
-          chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
-          chrome.notifications.clear(id);
-          chrome.notifications.onClicked.removeListener(clickHandler);
-        }
-      };
-
-      chrome.notifications.onButtonClicked.addListener(buttonHandler);
-      chrome.notifications.onClicked.addListener(clickHandler);
+      // Clicks are handled by the module-level listeners above, which resolve
+      // the username from the notification id — no per-notification listeners.
     } catch (error) {
       console.error('Error showing notification:', error);
     }
