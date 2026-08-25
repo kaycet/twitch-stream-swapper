@@ -895,12 +895,21 @@ class PopupManager {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
         const isLive = statuses[stream.username] != null;
-        
-        if (wasLive !== isLive) {
-          stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
+        const newData = statuses[stream.username] || null;
+
+        // Re-render on live-state transitions, and also while a stream stays
+        // live but its metadata moved on (title/game/viewers went stale before).
+        const changedWhileLive = isLive && wasLive && (
+          stream.streamData?.title !== newData?.title ||
+          stream.streamData?.game_name !== newData?.game_name ||
+          stream.streamData?.viewer_count !== newData?.viewer_count
+        );
+
+        if (wasLive !== isLive || changedWhileLive) {
           hasChanges = true;
         }
+        stream.isLive = isLive;
+        stream.streamData = newData;
       });
 
       if (hasChanges) {
