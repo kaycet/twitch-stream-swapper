@@ -11,6 +11,18 @@ class StorageManager {
     this.saveQueue = new Map();
     this.saveTimeout = null;
     this.DEBOUNCE_DELAY = 300; // ms
+
+    // Each extension context (service worker, popup, options) has its own
+    // StorageManager instance and cache. A write from one context must
+    // invalidate the caches of the others, or the background poller re-reads
+    // its stale stream list and writes it back, clobbering edits just made in
+    // the popup. onChanged fires in every context, including the writer's.
+    if (globalThis.chrome?.storage?.onChanged?.addListener) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        this.cache.clear();
+      });
+    }
   }
 
   /**
@@ -29,11 +41,21 @@ class StorageManager {
 
     try {
       const result = await chrome.storage.local.get(keyArray);
+
+      // Overlay queued-but-unflushed debounced writes: a read inside the
+      // debounce window must see the pending value, or callers merge on top
+      // of stale data and the queued update is lost when they save.
+      for (const key of keyArray) {
+        if (this.saveQueue.has(key)) {
+          result[key] = this.saveQueue.get(key);
+        }
+      }
+
       const value = Array.isArray(keys) ? result : result[keys];
-      
+
       // Cache the result
       this.cache.set(cacheKey, value);
-      
+
       return value;
     } catch (error) {
       console.error('Storage get error:', error);
