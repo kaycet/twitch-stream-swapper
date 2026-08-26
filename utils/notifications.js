@@ -71,12 +71,21 @@ class NotificationManager {
         requireInteraction: false
       });
 
-      // Setup one-time listeners for this notification
+      // Setup one-time listeners for this notification. All three handlers
+      // are removed together — dismissing the notification (onClosed) must
+      // clean up too, or every live notification leaks two listeners that run
+      // on all future notifications for the lifetime of the service worker.
+      const cleanup = () => {
+        chrome.notifications.onButtonClicked.removeListener(buttonHandler);
+        chrome.notifications.onClicked.removeListener(clickHandler);
+        chrome.notifications.onClosed.removeListener(closedHandler);
+      };
+
       const buttonHandler = (id, buttonIndex) => {
         if (id === notificationId && buttonIndex === 0) {
           chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
           chrome.notifications.clear(id);
-          chrome.notifications.onButtonClicked.removeListener(buttonHandler);
+          cleanup();
         }
       };
 
@@ -84,12 +93,19 @@ class NotificationManager {
         if (id === notificationId) {
           chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
           chrome.notifications.clear(id);
-          chrome.notifications.onClicked.removeListener(clickHandler);
+          cleanup();
+        }
+      };
+
+      const closedHandler = (id) => {
+        if (id === notificationId) {
+          cleanup();
         }
       };
 
       chrome.notifications.onButtonClicked.addListener(buttonHandler);
       chrome.notifications.onClicked.addListener(clickHandler);
+      chrome.notifications.onClosed.addListener(closedHandler);
     } catch (error) {
       console.error('Error showing notification:', error);
     }
