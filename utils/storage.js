@@ -11,6 +11,21 @@ class StorageManager {
     this.saveQueue = new Map();
     this.saveTimeout = null;
     this.DEBOUNCE_DELAY = 300; // ms
+
+    // Each extension context (popup, options, background) gets its own
+    // StorageManager instance with its own cache. Without this listener a
+    // write from one context (e.g. the popup saving the stream list) leaves
+    // every other context serving stale cached data — the background worker
+    // would then overwrite the user's edit with its stale copy on the next
+    // poll. chrome.storage.onChanged fires in all contexts, so clearing the
+    // cache here keeps them coherent.
+    if (globalThis.chrome?.storage?.onChanged?.addListener) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local') {
+          this.cache.clear();
+        }
+      });
+    }
   }
 
   /**
