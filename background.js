@@ -303,7 +303,7 @@ class BackgroundWorker {
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
-        await this.handleAutoSwitch(highestPriorityLive, prioritized);
+        await this.handleAutoSwitch(highestPriorityLive);
       }
 
       // Handle category fallback if no streams are live
