@@ -267,7 +267,7 @@ class TwitchAPI {
     }
 
     const results = {};
-    let hasError = false;
+    let successCount = 0;
     let lastError = null;
 
     for (const batch of batches) {
@@ -291,11 +291,11 @@ class TwitchAPI {
         batch.forEach(username => {
           results[username] = liveStreams[username.toLowerCase()] || null;
         });
+        successCount++;
       } catch (error) {
         console.error('Error checking stream status:', error);
-        hasError = true;
         lastError = error;
-        
+
         // Mark all in batch as null on error
         batch.forEach(username => {
           results[username] = null;
@@ -303,10 +303,20 @@ class TwitchAPI {
       }
     }
 
-    // If we had errors and it's a critical error (not just network issues), throw
-    if (hasError && lastError && 
-        (lastError.code === 'AUTH_ERROR' || lastError.code === 'RATE_LIMIT')) {
-      throw lastError;
+    if (lastError) {
+      // Auth/rate-limit problems are always surfaced so the caller can back off.
+      if (lastError.code === 'AUTH_ERROR' || lastError.code === 'RATE_LIMIT') {
+        throw lastError;
+      }
+      // If every batch failed we have no data at all. Throwing lets the caller
+      // schedule a retry instead of treating "network down" as "every stream
+      // is offline" — which would reset wasLive (spurious re-live
+      // notifications on recovery) and redirect the managed tab to a random
+      // category-fallback stream. Partial failures (some batches succeeded)
+      // still return the lenient mixed result.
+      if (successCount === 0) {
+        throw lastError;
+      }
     }
 
     return results;
