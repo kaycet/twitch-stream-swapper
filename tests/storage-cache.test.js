@@ -43,6 +43,31 @@ describe('StorageManager cache invalidation', () => {
     expect(a2[0].username).toBe('b');
   });
 
+  it('reads see pending debounced writes (read-your-writes)', async () => {
+    vi.useFakeTimers();
+    try {
+      await chrome.storage.local.set({ analytics: { viewingTime: { streamer: 60 }, switchCount: 0, lastSwitch: null } });
+
+      // Two read-modify-write cycles inside the debounce window, as the
+      // background worker does on every auto-switch (updateAnalytics then
+      // recordSwitch). The second read must see the first queued write, or
+      // the viewing-time increment is silently lost.
+      const a1 = await storage.getAnalytics();
+      await storage.saveAnalytics({ ...a1, viewingTime: { streamer: a1.viewingTime.streamer + 60 } });
+
+      const a2 = await storage.getAnalytics();
+      expect(a2.viewingTime.streamer).toBe(120);
+      await storage.saveAnalytics({ ...a2, switchCount: a2.switchCount + 1 });
+
+      // Flush the debounce and confirm both updates reached chrome.storage.
+      await vi.advanceTimersByTimeAsync(400);
+      expect(store.get('analytics')?.viewingTime?.streamer).toBe(120);
+      expect(store.get('analytics')?.switchCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit

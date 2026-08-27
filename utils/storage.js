@@ -29,11 +29,20 @@ class StorageManager {
 
     try {
       const result = await chrome.storage.local.get(keyArray);
+      // Overlay pending debounced writes so reads within the debounce window
+      // see their own writes. Without this, two read-modify-write cycles inside
+      // DEBOUNCE_DELAY (e.g. updateAnalytics then recordSwitch) both read the
+      // stale stored value and the second queued write silently drops the first.
+      for (const key of keyArray) {
+        if (this.saveQueue.has(key)) {
+          result[key] = this.saveQueue.get(key);
+        }
+      }
       const value = Array.isArray(keys) ? result : result[keys];
-      
+
       // Cache the result
       this.cache.set(cacheKey, value);
-      
+
       return value;
     } catch (error) {
       console.error('Storage get error:', error);
