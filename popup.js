@@ -894,12 +894,24 @@ class PopupManager {
       this.streams.forEach(stream => {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
-        const isLive = statuses[stream.username] != null;
-        
+        const next = statuses[stream.username] ?? null;
+        const isLive = next != null;
+
         if (wasLive !== isLive) {
           stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
+          stream.streamData = next;
           hasChanges = true;
+        } else if (isLive) {
+          // Still live: refresh title/game/viewers so the meta line doesn't
+          // stay frozen at whatever it was when the stream first went live.
+          const prev = stream.streamData;
+          if (!prev
+              || prev.title !== next.title
+              || prev.game_name !== next.game_name
+              || prev.viewer_count !== next.viewer_count) {
+            stream.streamData = next;
+            hasChanges = true;
+          }
         }
       });
 
