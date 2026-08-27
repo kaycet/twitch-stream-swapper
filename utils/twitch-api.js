@@ -98,8 +98,6 @@ class TwitchAPI {
    * @returns {Promise<any>}
    */
   async _request(endpoint, params = {}, retries = 3) {
-    await this._checkRateLimit();
-
     // If endpoint already has query params, don't add more
     let url;
     if (endpoint.includes('?')) {
@@ -110,7 +108,9 @@ class TwitchAPI {
     }
     const cacheKey = url;
 
-    // Check cache
+    // Check cache before the rate limiter: a cache hit makes no network
+    // request, so it must not consume rate budget (or sleep for up to a
+    // minute when the window is saturated) just to return cached data.
     if (this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey);
       if (Date.now() - cached.timestamp < this.cacheTTL) {
@@ -118,6 +118,8 @@ class TwitchAPI {
       }
       this.cache.delete(cacheKey);
     }
+
+    await this._checkRateLimit();
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
