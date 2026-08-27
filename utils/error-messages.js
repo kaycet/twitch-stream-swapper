@@ -34,9 +34,19 @@ class ErrorMessageManager {
       };
     }
 
-    // Authentication errors (production uses token broker + app access token)
-    if (errorString.includes('client id') || errorString.includes('401') || 
-        errorString.includes('unauthorized') || errorString.includes('invalid')) {
+    // Authentication errors (production uses token broker + app access token).
+    // Match specific auth phrases only — a bare 'invalid' check used to swallow
+    // unrelated messages like "Invalid username format" or "Invalid color ...".
+    if (errorString.includes('client id') || errorString.includes('401') ||
+        errorString.includes('unauthorized') || errorString.includes('invalid token') ||
+        errorString.includes('invalid oauth') || errorString.includes('invalid access token')) {
+      if (context === 'saveSettings' && errorString.includes('client id')) {
+        return {
+          message: 'Invalid Twitch Client ID (advanced setting).',
+          type: 'error',
+          action: 'If you changed the Client ID manually, verify it matches your Twitch app. Otherwise, clear the field and Save to use the built-in config.'
+        };
+      }
       if (context === 'saveSettings' || context === 'checkStatus') {
         return {
           message: 'Twitch API authorization failed.',
@@ -104,16 +114,6 @@ class ErrorMessageManager {
           message: 'Free tier limited to 10 streams. Enable Supporter Features (honor system) for unlimited streams.',
           type: 'info',
           action: 'Go to Settings → Supporter Features.'
-        };
-      }
-    }
-
-    if (context === 'saveSettings') {
-      if (errorString.includes('client id')) {
-        return {
-          message: 'Invalid Twitch Client ID (advanced setting).',
-          type: 'error',
-          action: 'If you changed the Client ID manually, verify it matches your Twitch app. Otherwise, clear the field and Save to use the built-in config.'
         };
       }
     }
