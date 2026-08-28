@@ -70,11 +70,6 @@ class BackgroundWorker {
     // Set initial badge state
     this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
 
-    // Prompt-before-switch handlers (optional setting)
-    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-      this.handleSwitchPromptResponse(notificationId, buttonIndex);
-    });
-
     // Listen for install/update
     chrome.runtime.onInstalled.addListener(() => {
       this.handleInstall();
@@ -618,6 +613,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
   worker.init()
     .then(() => worker.handleSettingsChange(changes.settings.newValue))
     .catch((e) => console.warn('Failed to apply settings change:', e));
+});
+
+// Prompt-before-switch buttons (optional setting). Registered at top level:
+// clicking the notification after the service worker was suspended re-wakes
+// it, and only synchronously-registered listeners receive that waking event —
+// a listener added inside async init() misses it. "Stream live" notification
+// clicks are handled the same way in utils/notifications.js.
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (!String(notificationId).startsWith('tsr_autoswap_')) return;
+  worker.init()
+    .then(() => worker.handleSwitchPromptResponse(notificationId, buttonIndex))
+    .catch((e) => console.warn('Failed to handle switch prompt response:', e));
 });
 
 // If the managed tab is closed, disable Auto-Swap automatically.
