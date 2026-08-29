@@ -6,7 +6,7 @@
 // so we can use normal static imports here.
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
-import notificationManager from './utils/notifications.js';
+import notificationManager, { parseStreamLiveNotificationId } from './utils/notifications.js';
 import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
@@ -69,16 +69,6 @@ class BackgroundWorker {
 
     // Set initial badge state
     this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
-
-    // Prompt-before-switch handlers (optional setting)
-    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-      this.handleSwitchPromptResponse(notificationId, buttonIndex);
-    });
-
-    // Listen for install/update
-    chrome.runtime.onInstalled.addListener(() => {
-      this.handleInstall();
-    });
     })();
 
     return this._initPromise;
@@ -90,13 +80,6 @@ class BackgroundWorker {
     // Bypass 5s throttle
     this.lastPollTime = 0;
     await this.pollStreams();
-  }
-
-  async handleInstall() {
-    // Extension works out of the box with hardcoded Client ID
-    // No need to open options page - it just works!
-    await storage.getSettings();
-    // Client ID is automatically set from defaults, so we're good
   }
 
   async handleSettingsChange(newSettings) {
@@ -608,6 +591,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   return false;
+});
+
+// Notification clicks, registered at top-level: clicks can arrive after the
+// service worker was suspended, and only top-level listeners survive a
+// restart. "Stream went live" ids carry the username; everything else with
+// buttons is a prompt-before-switch notification.
+chrome.notifications.onClicked.addListener((notificationId) => {
+  const username = parseStreamLiveNotificationId(notificationId);
+  if (!username) return;
+  chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
+  chrome.notifications.clear(notificationId);
+});
+
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  const username = parseStreamLiveNotificationId(notificationId);
+  if (username) {
+    // Single "Watch Now" button
+    if (buttonIndex === 0) {
+      chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
+    }
+    chrome.notifications.clear(notificationId);
+    return;
+  }
+  worker.init()
+    .then(() => worker.handleSwitchPromptResponse(notificationId, buttonIndex))
+    .catch((e) => console.warn('Failed to handle switch prompt response:', e));
 });
 
 // Also listen for settings changes at top-level, so badge/polling updates are not delayed
