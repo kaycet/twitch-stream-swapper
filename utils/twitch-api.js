@@ -247,7 +247,11 @@ class TwitchAPI {
    * Check if multiple streams are live (batch request)
    * @param {string[]} usernames - Array of usernames (up to 100)
    * @returns {Promise<Object>} - Map of username -> stream data or null
-   * @throws {Error} - If there's a critical error that should be handled by caller
+   * @throws {Error} - If any batch request fails after retries. "Offline" and
+   *   "we couldn't reach the API" must stay distinct: reporting failures as
+   *   offline made a network blip reset wasLive (duplicate live notifications
+   *   on recovery) and triggered category-fallback redirects away from a
+   *   stream that was still live.
    */
   async checkStreamsStatus(usernames) {
     if (!usernames || usernames.length === 0) {
@@ -267,46 +271,29 @@ class TwitchAPI {
     }
 
     const results = {};
-    let hasError = false;
-    let lastError = null;
 
     for (const batch of batches) {
       // Twitch Helix API accepts multiple user_login params by repeating them
       // Build query string with repeated user_login parameters
       const loginParams = batch.map(u => `user_login=${encodeURIComponent(u.toLowerCase())}`).join('&');
-      
-      try {
-        // Use the query string directly in the endpoint
-        const data = await this._request(`/streams?${loginParams}`, {});
-        
-        // Create map of live streams
-        const liveStreams = {};
-        if (data.data) {
-          data.data.forEach(stream => {
-            liveStreams[stream.user_login.toLowerCase()] = stream;
-          });
-        }
 
-        // Map results
-        batch.forEach(username => {
-          results[username] = liveStreams[username.toLowerCase()] || null;
-        });
-      } catch (error) {
-        console.error('Error checking stream status:', error);
-        hasError = true;
-        lastError = error;
-        
-        // Mark all in batch as null on error
-        batch.forEach(username => {
-          results[username] = null;
+      // Use the query string directly in the endpoint. _request already
+      // retried retryable errors, so a failure here is real — propagate it
+      // instead of guessing at stream state.
+      const data = await this._request(`/streams?${loginParams}`, {});
+
+      // Create map of live streams
+      const liveStreams = {};
+      if (data.data) {
+        data.data.forEach(stream => {
+          liveStreams[stream.user_login.toLowerCase()] = stream;
         });
       }
-    }
 
-    // If we had errors and it's a critical error (not just network issues), throw
-    if (hasError && lastError && 
-        (lastError.code === 'AUTH_ERROR' || lastError.code === 'RATE_LIMIT')) {
-      throw lastError;
+      // Map results
+      batch.forEach(username => {
+        results[username] = liveStreams[username.toLowerCase()] || null;
+      });
     }
 
     return results;
