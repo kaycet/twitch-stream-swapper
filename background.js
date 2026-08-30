@@ -306,8 +306,11 @@ class BackgroundWorker {
         await this.handleAutoSwitch(highestPriorityLive, prioritized);
       }
 
-      // Handle category fallback if no streams are live
-      if (!highestPriorityLive && this.settings?.fallbackCategory) {
+      // Handle category fallback if no streams are live. Fallback is part of
+      // Auto-Swap: without this gate, turning Auto-Swap off in Options (which
+      // keeps managedTwitchTabId set) left the extension redirecting the
+      // managed tab to random category streams while the UI said "OFF".
+      if (!highestPriorityLive && this.settings?.redirectEnabled && this.settings?.fallbackCategory) {
         await this.handleCategoryFallback({ force: false, reason: 'auto' });
       }
 
