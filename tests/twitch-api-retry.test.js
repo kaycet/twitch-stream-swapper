@@ -85,6 +85,42 @@ describe('TwitchAPI request retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('checkStreamsStatus throws when every batch fails, instead of reporting all streams offline', async () => {
+    // All-null results would reset callers' "was live" tracking and re-fire
+    // "went live" notifications for every stream once the network recovers.
+    const fetchMock = vi.fn(async () => { throw new TypeError('Failed to fetch'); });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = twitchAPI.checkStreamsStatus(['somechannel', 'otherchannel']);
+    const assertion = expect(request).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+
+    await vi.runAllTimersAsync();
+    await assertion;
+  });
+
+  it('checkStreamsStatus keeps partial results when only some batches fail', async () => {
+    // 101 usernames -> two batches of 100 + 1.
+    const usernames = Array.from({ length: 101 }, (_, i) => `channel_${String(i).padStart(3, '0')}`);
+    const okResponse = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => null },
+      json: async () => ({ data: [{ user_login: 'channel_000' }] }),
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okResponse)
+      .mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = twitchAPI.checkStreamsStatus(usernames);
+    await vi.runAllTimersAsync();
+    const results = await request;
+
+    expect(results['channel_000']).toEqual({ user_login: 'channel_000' });
+    expect(results['channel_100']).toBeNull();
+  });
+
   it('does not retry non-retryable errors (401)', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: false,

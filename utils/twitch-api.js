@@ -267,7 +267,7 @@ class TwitchAPI {
     }
 
     const results = {};
-    let hasError = false;
+    let successCount = 0;
     let lastError = null;
 
     for (const batch of batches) {
@@ -291,11 +291,11 @@ class TwitchAPI {
         batch.forEach(username => {
           results[username] = liveStreams[username.toLowerCase()] || null;
         });
+        successCount++;
       } catch (error) {
         console.error('Error checking stream status:', error);
-        hasError = true;
         lastError = error;
-        
+
         // Mark all in batch as null on error
         batch.forEach(username => {
           results[username] = null;
@@ -303,9 +303,17 @@ class TwitchAPI {
       }
     }
 
-    // If we had errors and it's a critical error (not just network issues), throw
-    if (hasError && lastError && 
+    // Critical errors always propagate so the caller can back off properly.
+    if (lastError &&
         (lastError.code === 'AUTH_ERROR' || lastError.code === 'RATE_LIMIT')) {
+      throw lastError;
+    }
+
+    // If every batch failed we have no data at all — throw instead of
+    // reporting everyone as offline. Returning all-null would reset the
+    // callers' "was live" tracking and re-fire "went live" notifications
+    // for every stream once the network recovers.
+    if (lastError && successCount === 0) {
       throw lastError;
     }
 
