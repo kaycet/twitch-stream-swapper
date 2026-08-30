@@ -527,10 +527,15 @@ class OptionsManager {
 
           const item = document.createElement('div');
           item.className = 'viewing-time-item';
-          item.innerHTML = `
-            <span class="viewing-time-username">${username}</span>
-            <span class="viewing-time-duration">${duration}</span>
-          `;
+          // textContent, not innerHTML: usernames come from storage and must
+          // never be interpreted as markup (popup.js already escapes them).
+          const nameEl = document.createElement('span');
+          nameEl.className = 'viewing-time-username';
+          nameEl.textContent = username;
+          const durationEl = document.createElement('span');
+          durationEl.className = 'viewing-time-duration';
+          durationEl.textContent = duration;
+          item.append(nameEl, durationEl);
           viewingTimeList.appendChild(item);
         });
       }
