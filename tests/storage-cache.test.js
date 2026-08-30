@@ -43,6 +43,18 @@ describe('StorageManager cache invalidation', () => {
     expect(a2[0].username).toBe('b');
   });
 
+  it('reads queued (debounced, not yet flushed) writes instead of stale storage', async () => {
+    await chrome.storage.local.set({ analytics: { switchCount: 1 } });
+
+    // Debounced write sits in the queue for up to 300ms.
+    await storage.set({ analytics: { switchCount: 2 } });
+
+    // A read inside the debounce window must see the queued value, otherwise
+    // read-modify-write callers (e.g. analytics) silently lose the update.
+    const analytics = await storage.get('analytics');
+    expect(analytics.switchCount).toBe(2);
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit

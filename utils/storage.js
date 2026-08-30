@@ -29,11 +29,21 @@ class StorageManager {
 
     try {
       const result = await chrome.storage.local.get(keyArray);
+
+      // Overlay writes that are still queued behind the debounce, so a read
+      // inside the debounce window doesn't return stale data (e.g. two
+      // analytics updates in one poll would otherwise lose the first one).
+      for (const key of keyArray) {
+        if (this.saveQueue.has(key)) {
+          result[key] = this.saveQueue.get(key);
+        }
+      }
+
       const value = Array.isArray(keys) ? result : result[keys];
-      
+
       // Cache the result
       this.cache.set(cacheKey, value);
-      
+
       return value;
     } catch (error) {
       console.error('Storage get error:', error);
