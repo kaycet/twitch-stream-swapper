@@ -6,7 +6,7 @@
 // so we can use normal static imports here.
 import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
-import notificationManager from './utils/notifications.js';
+import notificationManager, { parseStreamLiveNotificationId } from './utils/notifications.js';
 import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
@@ -56,29 +56,11 @@ class BackgroundWorker {
       await twitchAPI.initialize(this.settings.clientId);
     }
 
-    // Setup idle detection
-    if (chrome.idle) {
-      chrome.idle.onStateChanged.addListener((state) => {
-        this.idleState = state;
-        this.handleIdleStateChange();
-      });
-    }
-
     // Start polling
     this.startPolling();
 
     // Set initial badge state
     this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
-
-    // Prompt-before-switch handlers (optional setting)
-    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-      this.handleSwitchPromptResponse(notificationId, buttonIndex);
-    });
-
-    // Listen for install/update
-    chrome.runtime.onInstalled.addListener(() => {
-      this.handleInstall();
-    });
     })();
 
     return this._initPromise;
@@ -613,6 +595,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
+// Notification interactions MUST be handled by top-level listeners: the click
+// itself re-wakes a suspended service worker, and a listener registered inside
+// async init() (or per-notification, after create()) is not re-registered by
+// the time the event is dispatched — the notification would silently do nothing.
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  // "Stream went live" notifications carry the streamer in their id.
+  const live = parseStreamLiveNotificationId(notificationId);
+  if (live) {
+    if (buttonIndex === 0) {
+      chrome.tabs.create({ url: `https://www.twitch.tv/${live.username}` });
+    }
+    chrome.notifications.clear(notificationId);
+    return;
+  }
+
+  // Otherwise it's a prompt-before-switch notification.
+  worker.init()
+    .then(() => worker.handleSwitchPromptResponse(notificationId, buttonIndex))
+    .catch((e) => console.warn('Failed to handle notification button click:', e));
+});
+
+chrome.notifications.onClicked.addListener((notificationId) => {
+  const live = parseStreamLiveNotificationId(notificationId);
+  if (!live) return;
+  chrome.tabs.create({ url: `https://www.twitch.tv/${live.username}` });
+  chrome.notifications.clear(notificationId);
+});
+
+// Idle transitions pause/resume polling; top-level registration for the same
+// reason as above (the transition event may be what wakes the worker).
+if (chrome.idle) {
+  chrome.idle.onStateChanged.addListener((state) => {
+    worker.idleState = state;
+    worker.init()
+      .then(() => worker.handleIdleStateChange())
+      .catch((e) => console.warn('Failed to handle idle state change:', e));
+  });
+}
+
 // Also listen for settings changes at top-level, so badge/polling updates are not delayed
 // by async init ordering.
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -669,8 +690,10 @@ worker.init().catch(error => {
 
 // Also initialize on install/update
 chrome.runtime.onInstalled.addListener(() => {
-  worker.init().catch(error => {
-    console.error('Service worker initialization failed on install:', error);
-  });
+  worker.init()
+    .then(() => worker.handleInstall())
+    .catch(error => {
+      console.error('Service worker initialization failed on install:', error);
+    });
 });
 

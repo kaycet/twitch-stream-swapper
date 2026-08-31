@@ -4,6 +4,22 @@
 
 import { formatViewers } from './format.js';
 
+// "Stream went live" notifications encode the streamer in the notification id
+// so click handling can be done by top-level listeners in the service worker.
+// Usernames are validated as [A-Za-z0-9_] before they get here, so the id is
+// unambiguous even though usernames sit between dashes.
+const STREAM_LIVE_ID_RE = /^stream-live-([A-Za-z0-9_]+)-\d+$/;
+
+/**
+ * Parse a "stream went live" notification id back into its username.
+ * @param {string} id - Notification id
+ * @returns {{username: string}|null}
+ */
+export function parseStreamLiveNotificationId(id) {
+  const match = STREAM_LIVE_ID_RE.exec(String(id || ''));
+  return match ? { username: match[1] } : null;
+}
+
 class NotificationManager {
   /**
    * Request notification permission
@@ -71,40 +87,10 @@ class NotificationManager {
         requireInteraction: false
       });
 
-      // Setup one-time listeners for this notification. Every path (button,
-      // body click, dismiss/expiry) removes all three, otherwise each
-      // notification leaks two listeners for the life of the service worker.
-      const cleanup = () => {
-        chrome.notifications.onButtonClicked.removeListener(buttonHandler);
-        chrome.notifications.onClicked.removeListener(clickHandler);
-        chrome.notifications.onClosed.removeListener(closedHandler);
-      };
-
-      const buttonHandler = (id, buttonIndex) => {
-        if (id === notificationId && buttonIndex === 0) {
-          chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
-          chrome.notifications.clear(id);
-          cleanup();
-        }
-      };
-
-      const clickHandler = (id) => {
-        if (id === notificationId) {
-          chrome.tabs.create({ url: `https://www.twitch.tv/${username}` });
-          chrome.notifications.clear(id);
-          cleanup();
-        }
-      };
-
-      const closedHandler = (id) => {
-        if (id === notificationId) {
-          cleanup();
-        }
-      };
-
-      chrome.notifications.onButtonClicked.addListener(buttonHandler);
-      chrome.notifications.onClicked.addListener(clickHandler);
-      chrome.notifications.onClosed.addListener(closedHandler);
+      // Clicks are handled by top-level listeners in background.js, which
+      // recover the username from the notification id. Per-notification
+      // listeners registered here would be gone once MV3 suspends the
+      // service worker, leaving the notification dead on click.
     } catch (error) {
       console.error('Error showing notification:', error);
     }
