@@ -20,7 +20,10 @@ class StorageManager {
    */
   async get(keys) {
     const keyArray = Array.isArray(keys) ? keys : [keys];
-    const cacheKey = JSON.stringify(keyArray);
+    // Include the argument shape in the key: get('streams') resolves to the
+    // bare value while get(['streams']) resolves to a {streams} object, so
+    // they must never share a cache entry.
+    const cacheKey = JSON.stringify(Array.isArray(keys) ? keyArray : keys);
     
     // Check cache first
     if (this.cache.has(cacheKey)) {
@@ -74,7 +77,9 @@ class StorageManager {
     }
 
     this.saveTimeout = setTimeout(() => {
-      this._flush();
+      // Errors are logged in _flush and the items stay queued for the next
+      // flush; swallow here so the timer doesn't raise an unhandled rejection.
+      this._flush().catch(() => {});
     }, this.DEBOUNCE_DELAY);
   }
 
@@ -91,6 +96,13 @@ class StorageManager {
     try {
       await chrome.storage.local.set(items);
     } catch (error) {
+      // Put failed writes back so a later flush retries them — but never
+      // clobber a newer value queued while this write was in flight.
+      for (const [key, value] of Object.entries(items)) {
+        if (!this.saveQueue.has(key)) {
+          this.saveQueue.set(key, value);
+        }
+      }
       console.error('Storage set error:', error);
       throw error;
     }

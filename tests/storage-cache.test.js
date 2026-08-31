@@ -55,6 +55,41 @@ describe('StorageManager cache invalidation', () => {
     expect(analytics.switchCount).toBe(2);
   });
 
+  it('does not share cache entries between get(key) and get([key])', async () => {
+    await chrome.storage.local.set({ streams: [{ username: 'a', priority: 1 }] });
+
+    // get([key]) resolves to a {key: value} object and get(key) to the bare
+    // value; a shared cache entry would hand one caller the other's shape.
+    const asObject = await storage.get(['streams']);
+    expect(asObject.streams).toHaveLength(1);
+
+    const asValue = await storage.get('streams');
+    expect(Array.isArray(asValue)).toBe(true);
+    expect(asValue).toHaveLength(1);
+  });
+
+  it('keeps failed writes queued so a later flush retries them', async () => {
+    chrome.storage.local.set.mockRejectedValueOnce(new Error('QUOTA_BYTES exceeded'));
+
+    await expect(storage.set({ analytics: { switchCount: 5 } }, true)).rejects.toThrow();
+    expect(store.get('analytics')).toBeUndefined();
+
+    // The failed value must survive in the queue: reads still see it, and the
+    // next flush persists it.
+    expect(await storage.get('analytics')).toEqual({ switchCount: 5 });
+    await storage.set({ settings: { theme: 'default' } }, true);
+    expect(store.get('analytics')).toEqual({ switchCount: 5 });
+  });
+
+  it('lets a newer queued value win over a re-queued failed write', async () => {
+    chrome.storage.local.set.mockRejectedValueOnce(new Error('transient'));
+    await expect(storage.set({ analytics: { switchCount: 1 } }, true)).rejects.toThrow();
+
+    // Queue a newer value for the same key, then flush.
+    await storage.set({ analytics: { switchCount: 2 } }, true);
+    expect(store.get('analytics')).toEqual({ switchCount: 2 });
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit
