@@ -4,6 +4,7 @@ import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
+import { moveStream } from './utils/reorder.js';
 
 class PopupManager {
   constructor() {
@@ -15,6 +16,7 @@ class PopupManager {
     this.statusCheckInterval = null;
     this.dragGhost = null;
     this.dragOffset = { x: 0, y: 0 };
+    this.dropBeforeTarget = true;
     this.categorySuggestTimer = null;
     this.categorySuggestCache = new Map(); // query -> { ts, items }
   }
@@ -743,8 +745,11 @@ class PopupManager {
           } else {
             item.classList.add('drag-over', 'drag-over-bottom');
           }
-          
+
           this.dragOverElement = item;
+          // Remember which half the indicator showed, so the drop lands where
+          // the indicator promised.
+          this.dropBeforeTarget = isAbove;
         }
       });
 
@@ -768,7 +773,8 @@ class PopupManager {
         if (this.draggedElement && this.dragOverElement) {
           await this.reorderStreams(
             this.draggedElement.dataset.username,
-            this.dragOverElement.dataset.username
+            this.dragOverElement.dataset.username,
+            this.dropBeforeTarget
           );
         }
 
@@ -841,22 +847,10 @@ class PopupManager {
     }
   }
 
-  async reorderStreams(draggedUsername, targetUsername) {
-    const draggedIndex = this.streams.findIndex(s => s.username === draggedUsername);
-    const targetIndex = this.streams.findIndex(s => s.username === targetUsername);
-
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    // Remove dragged item
-    const [dragged] = this.streams.splice(draggedIndex, 1);
-    
-    // Insert at target position
-    this.streams.splice(targetIndex, 0, dragged);
-
-    // Update priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+  async reorderStreams(draggedUsername, targetUsername, placeBefore = true) {
+    const reordered = moveStream(this.streams, draggedUsername, targetUsername, placeBefore);
+    if (!reordered) return;
+    this.streams = reordered;
 
     // Save immediately (no debounce for reordering)
     await storage.saveStreams(this.streams);
