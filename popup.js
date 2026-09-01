@@ -4,8 +4,8 @@ import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
-import { moveStream } from './utils/reorder.js';
 import { computeBadge } from './utils/badge.js';
+import { moveStream } from './utils/reorder.js';
 
 class PopupManager {
   constructor() {
@@ -446,7 +446,8 @@ class PopupManager {
     const premiumBadge = document.getElementById('premiumBadge');
 
     // Update count
-    streamCount.textContent = `${this.streams.length} stream${this.streams.length !== 1 ? 's' : ''}`;
+    // "channel" to match the rest of the popup copy (Add channel, empty state).
+    streamCount.textContent = `${this.streams.length} channel${this.streams.length !== 1 ? 's' : ''}`;
     
     // Show premium badge
     if (this.settings?.premiumStatus) {
@@ -894,19 +895,28 @@ class PopupManager {
 
       // Update stream statuses
       let hasChanges = false;
+      // Fields the list actually displays; refresh them while a stream STAYS
+      // live too, or title/viewers/uptime go stale for as long as the popup
+      // is open.
+      const displayFields = ['title', 'game_name', 'viewer_count', 'started_at'];
       this.streams.forEach(stream => {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
         const isLive = statuses[stream.username] != null;
-        
+        const nextData = statuses[stream.username] || null;
+
         if (wasLive !== isLive) {
           stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
+          stream.streamData = nextData;
+          hasChanges = true;
+        } else if (isLive && displayFields.some((k) => stream.streamData?.[k] !== nextData?.[k])) {
+          stream.streamData = nextData;
           hasChanges = true;
         }
       });
 
-      if (hasChanges) {
+      // Never re-render mid-drag; the DOM rebuild would break the drag.
+      if (hasChanges && !this.draggedElement) {
         this.render();
       }
 
