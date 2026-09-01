@@ -5,6 +5,7 @@ import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
 import { moveStream } from './utils/reorder.js';
+import { computeBadge } from './utils/badge.js';
 
 class PopupManager {
   constructor() {
@@ -508,10 +509,18 @@ class PopupManager {
   updateActionBadge(enabled) {
     try {
       if (!chrome?.action) return;
-      const on = !!enabled;
-      chrome.action.setBadgeText({ text: on ? 'ON' : '' });
-      chrome.action.setBadgeBackgroundColor({ color: on ? '#00dc82' : '#5c5c66' });
-      chrome.action.setTitle({ title: on ? 'Auto-Swap ON' : 'Auto-Swap OFF' });
+      // Same scheme as the background worker (shared via utils/badge.js), so
+      // the popup's instant update doesn't get repainted differently by the
+      // next background poll. this.streams is priority-sorted, so the first
+      // live entry is the one Auto-Swap would watch.
+      const { text, color, title } = computeBadge({
+        enabled,
+        liveCount: this.streams.filter((s) => s.isLive).length,
+        target: enabled ? (this.streams.find((s) => s.isLive)?.username || null) : null,
+      });
+      chrome.action.setBadgeText({ text });
+      chrome.action.setBadgeBackgroundColor({ color });
+      chrome.action.setTitle({ title });
     } catch {
       // Non-fatal
     }
