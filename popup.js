@@ -4,13 +4,24 @@ import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
+import { computeBadge } from './utils/badge.js';
+import { moveStream } from './utils/reorder.js';
+import {
+  createDragState,
+  startDrag,
+  hoverTarget,
+  leaveTarget,
+  planDrop,
+  requestRender,
+  endDrag,
+} from './utils/drag-state.js';
 
 class PopupManager {
   constructor() {
     this.streams = [];
     this.settings = null;
-    this.draggedElement = null;
-    this.dragOverElement = null;
+    this.draggedElement = null; // DOM node for class/ghost bookkeeping only
+    this.drag = createDragState(); // what a drop means; whether a render is deferred
     this.debounceTimeout = null;
     this.statusCheckInterval = null;
     this.dragGhost = null;
@@ -506,11 +517,11 @@ class PopupManager {
   updateActionBadge(enabled) {
     try {
       if (!chrome?.action) return;
-      const on = !!enabled;
-      // Only touch the color: the background worker owns the badge text
-      // (live count) and title. Writing 'ON'/green here fought the worker's
-      // count/purple scheme, and wiped the live count every popup render.
-      chrome.action.setBadgeBackgroundColor({ color: on ? '#9146ff' : '#5c5c66' });
+      // Colour only, from the same scheme as the worker (utils/badge.js).
+      // The background worker owns the badge text (live count) and title:
+      // it repaints them with its own count on every settings change, so a
+      // popup-side text write would only flicker and then be overwritten.
+      chrome.action.setBadgeBackgroundColor({ color: computeBadge({ enabled }).color });
     } catch {
       // Non-fatal
     }
@@ -686,6 +697,7 @@ class PopupManager {
     items.forEach(item => {
       item.addEventListener('dragstart', (e) => {
         this.draggedElement = item;
+        startDrag(this.drag, item.dataset.username);
         item.classList.add('dragging');
         listContainer.classList.add('dragging-active');
         
@@ -722,7 +734,10 @@ class PopupManager {
         });
         
         this.draggedElement = null;
-        this.dragOverElement = null;
+        // A status poll that landed mid-drag skipped its render (the DOM
+        // rebuild would have broken the drag); paint it now.
+        const { renderPending } = endDrag(this.drag);
+        if (renderPending) this.render();
       });
 
       item.addEventListener('dragover', (e) => {
@@ -745,7 +760,9 @@ class PopupManager {
             item.classList.add('drag-over', 'drag-over-bottom');
           }
           
-          this.dragOverElement = item;
+          // Remember which half the indicator showed, so the drop lands where
+          // the indicator promised.
+          hoverTarget(this.drag, item.dataset.username, isAbove);
         }
       });
 
@@ -759,18 +776,18 @@ class PopupManager {
         // Only remove if we're actually leaving the element
         if (!item.contains(e.relatedTarget)) {
           item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
+          // No indicator showing means no promised drop position.
+          leaveTarget(this.drag, item.dataset.username);
         }
       });
 
       item.addEventListener('drop', async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        
-        if (this.draggedElement && this.dragOverElement) {
-          await this.reorderStreams(
-            this.draggedElement.dataset.username,
-            this.dragOverElement.dataset.username
-          );
+
+        const plan = planDrop(this.drag);
+        if (plan) {
+          await this.reorderStreams(plan.draggedUsername, plan.targetUsername, plan.placeBefore);
         }
 
         item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
@@ -842,22 +859,10 @@ class PopupManager {
     }
   }
 
-  async reorderStreams(draggedUsername, targetUsername) {
-    const draggedIndex = this.streams.findIndex(s => s.username === draggedUsername);
-    const targetIndex = this.streams.findIndex(s => s.username === targetUsername);
-
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    // Remove dragged item
-    const [dragged] = this.streams.splice(draggedIndex, 1);
-    
-    // Insert at target position
-    this.streams.splice(targetIndex, 0, dragged);
-
-    // Update priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+  async reorderStreams(draggedUsername, targetUsername, placeBefore = true) {
+    const reordered = moveStream(this.streams, draggedUsername, targetUsername, placeBefore);
+    if (!reordered) return;
+    this.streams = reordered;
 
     // Save immediately (no debounce for reordering)
     await storage.saveStreams(this.streams);
@@ -892,22 +897,19 @@ class PopupManager {
 
       // Update stream statuses
       let hasChanges = false;
+      // Fields the list actually displays; refresh them while a stream STAYS
+      // live too, or title/viewers/uptime go stale for as long as the popup
+      // is open.
+      const displayFields = ['title', 'game_name', 'viewer_count', 'started_at'];
       this.streams.forEach(stream => {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
         const data = statuses[stream.username] ?? null;
         const isLive = data != null;
 
-        // Re-render on live-status flips, and also when a stream that stays
-        // live changes title/category/viewers — otherwise the metadata shown
-        // in the list froze at whatever it was when the popup opened.
         if (wasLive !== isLive) {
           hasChanges = true;
-        } else if (isLive && (
-          stream.streamData?.title !== data.title ||
-          stream.streamData?.game_name !== data.game_name ||
-          stream.streamData?.viewer_count !== data.viewer_count
-        )) {
+        } else if (isLive && displayFields.some((k) => stream.streamData?.[k] !== data?.[k])) {
           hasChanges = true;
         }
 
@@ -915,7 +917,9 @@ class PopupManager {
         stream.streamData = data;
       });
 
-      if (hasChanges) {
+      // Never re-render mid-drag (the DOM rebuild would break the drag);
+      // requestRender defers it to dragend instead of dropping it.
+      if (hasChanges && requestRender(this.drag)) {
         this.render();
       }
 

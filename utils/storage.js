@@ -87,7 +87,9 @@ class StorageManager {
     }
 
     this.saveTimeout = setTimeout(() => {
-      this._flush();
+      // _flush already logs failures; swallow here so a failed debounced
+      // write doesn't surface as an unhandled promise rejection.
+      this._flush().catch(() => {});
     }, this.DEBOUNCE_DELAY);
   }
 

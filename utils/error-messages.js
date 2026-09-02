@@ -3,6 +3,19 @@
  * Provides user-friendly, actionable error messages
  */
 
+// error.code values stamped by utils/twitch-api.js -> classification branch.
+// Codes not listed here (NOT_FOUND, FORBIDDEN_ORIGIN) fall through to message
+// matching and ultimately the raw message.
+const CODE_KINDS = {
+  NETWORK_ERROR: 'network',
+  TIMEOUT: 'timeout',
+  RATE_LIMIT: 'rate-limit',
+  AUTH_ERROR: 'auth',
+  PARSE_ERROR: 'parse',
+  SERVER_ERROR: 'api',
+  API_ERROR: 'api',
+};
+
 class ErrorMessageManager {
   /**
    * Get user-friendly error message based on error type
@@ -13,10 +26,19 @@ class ErrorMessageManager {
   static getErrorMessage(error, context = 'general') {
     const errorMessage = error?.message || error || 'An unknown error occurred';
     const errorString = errorMessage.toLowerCase();
+    // utils/twitch-api.js stamps a machine-readable code on everything it
+    // throws; trust that first and fall back to message sniffing only for
+    // plain-string callers (options.js) and errors from elsewhere.
+    const code = typeof error?.code === 'string' ? error.code : null;
+    // A known code decides outright; message sniffing only runs when there
+    // is no (or an unknown) code, so words embedded in an API response body
+    // ("could not parse json") cannot hijack the classification.
+    const kind = CODE_KINDS[code] || null;
 
     // Network errors
-    if (errorString.includes('network') || errorString.includes('fetch') || 
-        errorString.includes('failed to fetch') || errorString.includes('networkerror')) {
+    if (kind === 'network' || (!kind && (
+        errorString.includes('network') || errorString.includes('fetch') ||
+        errorString.includes('failed to fetch') || errorString.includes('networkerror')))) {
       return {
         message: 'Network connection failed. Please check your internet connection and try again.',
         type: 'error',
@@ -25,8 +47,9 @@ class ErrorMessageManager {
     }
 
     // Rate limiting
-    if (errorString.includes('429') || errorString.includes('rate limit') || 
-        errorString.includes('too many requests')) {
+    if (kind === 'rate-limit' || (!kind && (
+        errorString.includes('429') || errorString.includes('rate limit') ||
+        errorString.includes('too many requests')))) {
       return {
         message: 'Rate limit exceeded. The extension is making too many requests to Twitch.',
         type: 'warning',
@@ -35,8 +58,15 @@ class ErrorMessageManager {
     }
 
     // Authentication errors (production uses token broker + app access token)
-    if (errorString.includes('client id') || errorString.includes('401') || 
-        errorString.includes('unauthorized') || errorString.includes('invalid')) {
+    // Match auth-specific "invalid ..." phrases only. A bare includes('invalid')
+    // used to swallow unrelated errors like "Invalid color for accent (use #RRGGBB)",
+    // "Invalid JSON response", and "Invalid username format", misreporting them all
+    // as "Twitch API is not configured".
+    if (kind === 'auth' || (!kind && (
+        errorString.includes('client id') || errorString.includes('401') ||
+        errorString.includes('unauthorized') ||
+        errorString.includes('invalid token') || errorString.includes('invalid access token') ||
+        errorString.includes('invalid oauth')))) {
       if (context === 'saveSettings' || context === 'checkStatus') {
         return {
           message: 'Twitch API authorization failed.',
@@ -52,9 +82,10 @@ class ErrorMessageManager {
     }
 
     // Invalid username errors
-    if (errorString.includes('invalid username') || errorString.includes('username') && 
-        (errorString.includes('format') || errorString.includes('not found') || 
-         errorString.includes('does not exist'))) {
+    if (!kind && (errorString.includes('invalid username') ||
+        (errorString.includes('username') &&
+         (errorString.includes('format') || errorString.includes('not found') ||
+          errorString.includes('does not exist'))))) {
       return {
         message: 'Invalid username. Twitch usernames must be 4-25 characters (letters, numbers, underscores).',
         type: 'error',
@@ -62,18 +93,11 @@ class ErrorMessageManager {
       };
     }
 
-    // API errors
-    if (errorString.includes('api') || errorString.includes('500') || 
-        errorString.includes('503') || errorString.includes('502')) {
-      return {
-        message: 'Twitch API is temporarily unavailable. Please try again in a few moments.',
-        type: 'error',
-        action: 'This is usually temporary. Wait a moment and try again.'
-      };
-    }
-
-    // JSON parsing errors
-    if (errorString.includes('json') || errorString.includes('parse')) {
+    // JSON parsing errors. Checked before the generic API branch: the real
+    // Helix parse failure reads "Invalid JSON response from Twitch API" and
+    // the "api" substring used to win.
+    if (kind === 'parse' || (!kind && (
+        errorString.includes('json') || errorString.includes('parse')))) {
       return {
         message: 'Received invalid data from Twitch. Please try again.',
         type: 'error',
@@ -81,8 +105,20 @@ class ErrorMessageManager {
       };
     }
 
+    // API errors
+    if (kind === 'api' || (!kind && (
+        errorString.includes('api') || errorString.includes('500') ||
+        errorString.includes('503') || errorString.includes('502')))) {
+      return {
+        message: 'Twitch API is temporarily unavailable. Please try again in a few moments.',
+        type: 'error',
+        action: 'This is usually temporary. Wait a moment and try again.'
+      };
+    }
+
     // Timeout errors
-    if (errorString.includes('timeout') || errorString.includes('timed out')) {
+    if (kind === 'timeout' || (!kind && (
+        errorString.includes('timeout') || errorString.includes('timed out')))) {
       return {
         message: 'Request timed out. The connection to Twitch took too long.',
         type: 'error',
