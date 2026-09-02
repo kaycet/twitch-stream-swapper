@@ -6,18 +6,26 @@ import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
 import { computeBadge } from './utils/badge.js';
 import { moveStream } from './utils/reorder.js';
+import {
+  createDragState,
+  startDrag,
+  hoverTarget,
+  leaveTarget,
+  planDrop,
+  requestRender,
+  endDrag,
+} from './utils/drag-state.js';
 
 class PopupManager {
   constructor() {
     this.streams = [];
     this.settings = null;
-    this.draggedElement = null;
-    this.dragOverElement = null;
+    this.draggedElement = null; // DOM node for class/ghost bookkeeping only
+    this.drag = createDragState(); // what a drop means; whether a render is deferred
     this.debounceTimeout = null;
     this.statusCheckInterval = null;
     this.dragGhost = null;
     this.dragOffset = { x: 0, y: 0 };
-    this.dropBeforeTarget = true;
     this.categorySuggestTimer = null;
     this.categorySuggestCache = new Map(); // query -> { ts, items }
   }
@@ -509,18 +517,11 @@ class PopupManager {
   updateActionBadge(enabled) {
     try {
       if (!chrome?.action) return;
-      // Same scheme as the background worker (shared via utils/badge.js), so
-      // the popup's instant update doesn't get repainted differently by the
-      // next background poll. this.streams is priority-sorted, so the first
-      // live entry is the one Auto-Swap would watch.
-      const { text, color, title } = computeBadge({
-        enabled,
-        liveCount: this.streams.filter((s) => s.isLive).length,
-        target: enabled ? (this.streams.find((s) => s.isLive)?.username || null) : null,
-      });
-      chrome.action.setBadgeText({ text });
-      chrome.action.setBadgeBackgroundColor({ color });
-      chrome.action.setTitle({ title });
+      // Colour only, from the same scheme as the worker (utils/badge.js).
+      // The background worker owns the badge text (live count) and title:
+      // it repaints them with its own count on every settings change, so a
+      // popup-side text write would only flicker and then be overwritten.
+      chrome.action.setBadgeBackgroundColor({ color: computeBadge({ enabled }).color });
     } catch {
       // Non-fatal
     }
@@ -696,6 +697,7 @@ class PopupManager {
     items.forEach(item => {
       item.addEventListener('dragstart', (e) => {
         this.draggedElement = item;
+        startDrag(this.drag, item.dataset.username);
         item.classList.add('dragging');
         listContainer.classList.add('dragging-active');
         
@@ -732,7 +734,10 @@ class PopupManager {
         });
         
         this.draggedElement = null;
-        this.dragOverElement = null;
+        // A status poll that landed mid-drag skipped its render (the DOM
+        // rebuild would have broken the drag); paint it now.
+        const { renderPending } = endDrag(this.drag);
+        if (renderPending) this.render();
       });
 
       item.addEventListener('dragover', (e) => {
@@ -755,10 +760,9 @@ class PopupManager {
             item.classList.add('drag-over', 'drag-over-bottom');
           }
           
-          this.dragOverElement = item;
           // Remember which half the indicator showed, so the drop lands where
           // the indicator promised.
-          this.dropBeforeTarget = isAbove;
+          hoverTarget(this.drag, item.dataset.username, isAbove);
         }
       });
 
@@ -772,19 +776,18 @@ class PopupManager {
         // Only remove if we're actually leaving the element
         if (!item.contains(e.relatedTarget)) {
           item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
+          // No indicator showing means no promised drop position.
+          leaveTarget(this.drag, item.dataset.username);
         }
       });
 
       item.addEventListener('drop', async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        
-        if (this.draggedElement && this.dragOverElement) {
-          await this.reorderStreams(
-            this.draggedElement.dataset.username,
-            this.dragOverElement.dataset.username,
-            this.dropBeforeTarget
-          );
+
+        const plan = planDrop(this.drag);
+        if (plan) {
+          await this.reorderStreams(plan.draggedUsername, plan.targetUsername, plan.placeBefore);
         }
 
         item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom', 'drag-target');
@@ -914,8 +917,9 @@ class PopupManager {
         stream.streamData = data;
       });
 
-      // Never re-render mid-drag; the DOM rebuild would break the drag.
-      if (hasChanges && !this.draggedElement) {
+      // Never re-render mid-drag (the DOM rebuild would break the drag);
+      // requestRender defers it to dragend instead of dropping it.
+      if (hasChanges && requestRender(this.drag)) {
         this.render();
       }
 

@@ -32,10 +32,9 @@ describe('ErrorMessageManager.getErrorMessage', () => {
     expect(info.message).toMatch(/invalid color for accent/i);
   });
 
-  it('no longer misreports an "Invalid JSON" API error as an auth error', () => {
-    // The regression being guarded is that it must NOT read as "not configured" (auth).
+  it('routes an "Invalid JSON" API error to the parse-error copy, not auth or outage', () => {
     const info = get(new Error('Invalid JSON response from Twitch API'));
-    expect(info.message).not.toMatch(/not configured/i);
+    expect(info.message).toMatch(/received invalid data from twitch/i);
   });
 
   it('classifies invalid username errors correctly', () => {

@@ -12,6 +12,15 @@ import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 import { computeBadge } from './utils/badge.js';
+import { memoizeAsync } from './utils/memoize-async.js';
+import {
+  NOT_NOW_BUTTON,
+  isAutoswapNotificationId,
+  isPendingNotification,
+  makeAutoswapNotificationId,
+  planSwitchPrompt,
+  planPromptResponse,
+} from './utils/switch-prompt.js';
 
 class BackgroundWorker {
   constructor() {
@@ -19,8 +28,10 @@ class BackgroundWorker {
     this.lastPollTime = 0;
     this.idleState = 'active';
     this.settings = null;
-    this.snoozeUntil = 0;
-    this._initPromise = null;
+    // Shared by every top-level listener. Memoized so init runs once per
+    // worker lifetime, but a rejected init is forgotten so the next event
+    // retries instead of inheriting a permanently failed promise.
+    this.init = memoizeAsync(() => this._init());
     this.runtime = {
       fallback: {
         active: false,
@@ -32,10 +43,7 @@ class BackgroundWorker {
     };
   }
 
-  async init() {
-    if (this._initPromise) return this._initPromise;
-
-    this._initPromise = (async () => {
+  async _init() {
     // Load settings
     this.settings = await storage.getSettings();
 
@@ -75,9 +83,6 @@ class BackgroundWorker {
     chrome.runtime.onInstalled.addListener(() => {
       this.handleInstall();
     });
-    })();
-
-    return this._initPromise;
   }
 
   async forcePollNow() {
@@ -101,6 +106,14 @@ class BackgroundWorker {
     // If Auto-Swap was turned off, clear fallback runtime (prevents stale "fallback mode" state).
     if (!this.settings?.redirectEnabled) {
       await this.setFallbackRuntime({ active: false });
+      // A "Switch to X?" card (or a "Not now" snooze) from before the toggle
+      // must not suppress the next prompt after re-enabling, nor linger with
+      // buttons that no-op.
+      await this.clearPendingSwitch();
+      await chrome.storage.local.remove(['switchSnoozeUntil']);
+    } else if (!this.settings?.promptBeforeSwitch) {
+      // Prompting turned off: an outstanding card would answer to nothing.
+      await this.clearPendingSwitch();
     }
     
     // Reinitialize API if client ID changed
@@ -340,18 +353,26 @@ class BackgroundWorker {
   }
 
   async promptBeforeSwitch(stream) {
-    if (Date.now() < this.snoozeUntil) return;
+    // Everything this decision needs lives in storage (not on `this`) so it
+    // survives MV3 service-worker suspension between polls and clicks.
+    const { pendingSwitch, switchSnoozeUntil } = await chrome.storage.local.get([
+      'pendingSwitch',
+      'switchSnoozeUntil',
+    ]);
+    const plan = planSwitchPrompt({
+      pendingSwitch,
+      snoozeUntil: switchSnoozeUntil,
+      username: stream.username,
+    });
+    if (!plan.prompt) return;
 
-    // Re-prompting on every poll would stack a new notification each interval
-    // and orphan the previous ones (their buttons no longer match the stored
-    // pendingSwitch). Keep at most one outstanding prompt per target.
-    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
-    if (pendingSwitch?.username === stream.username
-        && Date.now() - (pendingSwitch.createdAt || 0) < 5 * 60 * 1000) {
-      return;
+    // Replacing the outstanding card: clear the old one so it cannot linger
+    // in the OS notification center with buttons that no longer match.
+    if (plan.staleNotificationId) {
+      chrome.notifications.clear(plan.staleNotificationId);
     }
 
-    const notificationId = `tsr_autoswap_${Date.now()}`;
+    const notificationId = makeAutoswapNotificationId();
     await chrome.storage.local.set({
       pendingSwitch: {
         notificationId,
@@ -375,19 +396,40 @@ class BackgroundWorker {
 
   async handleSwitchPromptResponse(notificationId, buttonIndex) {
     const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
-    if (!pendingSwitch || pendingSwitch.notificationId !== notificationId) return;
+    const plan = planPromptResponse({ pendingSwitch, notificationId, buttonIndex });
 
-    if (buttonIndex === 0) {
-      // Switch
-      await this.switchToStream({ username: pendingSwitch.username });
-      this.currentWatchingStream = pendingSwitch.username;
-    } else {
-      // Snooze prompts for 5 minutes
-      this.snoozeUntil = Date.now() + 5 * 60 * 1000;
+    if (plan.action === 'switch') {
+      await this.switchToStream({ username: plan.username });
+      this.currentWatchingStream = plan.username;
+      await chrome.storage.local.remove(['pendingSwitch']);
+    } else if (plan.action === 'snooze') {
+      // Persisted: an in-memory snooze died with the next worker suspension.
+      await chrome.storage.local.set({ switchSnoozeUntil: plan.snoozeUntil });
+      await chrome.storage.local.remove(['pendingSwitch']);
     }
-
-    await chrome.storage.local.remove(['pendingSwitch']);
+    // 'stale' (a card whose pendingSwitch was replaced or cleared) falls
+    // through: still dismiss it so it does not sit there doing nothing.
     chrome.notifications.clear(notificationId);
+  }
+
+  /**
+   * User dismissed the card with X. Treated exactly like "Not now": snooze
+   * for SNOOZE_MS. Simply forgetting the card would re-prompt on the very
+   * next poll (~1/min) — the spam the dedup exists to stop.
+   */
+  async handleSwitchPromptClosed(notificationId) {
+    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
+    if (!isPendingNotification(pendingSwitch, notificationId)) return;
+    await this.handleSwitchPromptResponse(notificationId, NOT_NOW_BUTTON);
+  }
+
+  async clearPendingSwitch() {
+    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
+    if (!pendingSwitch) return;
+    await chrome.storage.local.remove(['pendingSwitch']);
+    if (pendingSwitch.notificationId) {
+      chrome.notifications.clear(pendingSwitch.notificationId);
+    }
   }
 
   async shouldSwitchToStream(stream) {
@@ -626,11 +668,31 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // it, and only synchronously-registered listeners receive that waking event —
 // a listener added inside async init() misses it. "Stream live" notification
 // clicks are handled the same way in utils/notifications.js.
+//
+// Both prompt events run through one queue: some platforms fire
+// onButtonClicked and then onClosed(byUser=true) for the same card, and the
+// button handler has to await init() first. Without the queue the close
+// handler would win the race, snooze, and the click would arrive "stale".
+let promptEvents = Promise.resolve();
+function queuePromptEvent(label, task) {
+  promptEvents = promptEvents
+    .then(task)
+    .catch((e) => console.warn(label, e));
+}
+
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-  if (!String(notificationId).startsWith('tsr_autoswap_')) return;
-  worker.init()
-    .then(() => worker.handleSwitchPromptResponse(notificationId, buttonIndex))
-    .catch((e) => console.warn('Failed to handle switch prompt response:', e));
+  if (!isAutoswapNotificationId(notificationId)) return;
+  queuePromptEvent('Failed to handle switch prompt response:', () =>
+    worker.init().then(() => worker.handleSwitchPromptResponse(notificationId, buttonIndex)));
+});
+
+// Dismissed with X (byUser). Programmatic clears and OS auto-hides are not
+// user decisions: the card is still actionable from the notification center,
+// so pendingSwitch keeps suppressing duplicate prompts for it.
+chrome.notifications.onClosed.addListener((notificationId, byUser) => {
+  if (!byUser || !isAutoswapNotificationId(notificationId)) return;
+  queuePromptEvent('Failed to handle dismissed switch prompt:', () =>
+    worker.handleSwitchPromptClosed(notificationId));
 });
 
 // If the managed tab is closed, disable Auto-Swap automatically.
