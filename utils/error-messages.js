@@ -35,8 +35,14 @@ class ErrorMessageManager {
     }
 
     // Authentication errors (production uses token broker + app access token)
-    if (errorString.includes('client id') || errorString.includes('401') || 
-        errorString.includes('unauthorized') || errorString.includes('invalid')) {
+    // Match auth-specific "invalid ..." phrases only. A bare includes('invalid')
+    // used to swallow unrelated errors like "Invalid color for accent (use #RRGGBB)",
+    // "Invalid JSON response", and "Invalid username format", misreporting them all
+    // as "Twitch API is not configured".
+    if (errorString.includes('client id') || errorString.includes('401') ||
+        errorString.includes('unauthorized') ||
+        errorString.includes('invalid token') || errorString.includes('invalid access token') ||
+        errorString.includes('invalid oauth')) {
       if (context === 'saveSettings' || context === 'checkStatus') {
         return {
           message: 'Twitch API authorization failed.',
@@ -52,9 +58,10 @@ class ErrorMessageManager {
     }
 
     // Invalid username errors
-    if (errorString.includes('invalid username') || errorString.includes('username') && 
-        (errorString.includes('format') || errorString.includes('not found') || 
-         errorString.includes('does not exist'))) {
+    if (errorString.includes('invalid username') ||
+        (errorString.includes('username') &&
+         (errorString.includes('format') || errorString.includes('not found') ||
+          errorString.includes('does not exist')))) {
       return {
         message: 'Invalid username. Twitch usernames must be 4-25 characters (letters, numbers, underscores).',
         type: 'error',

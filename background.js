@@ -11,6 +11,7 @@ import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
+import { computeBadge } from './utils/badge.js';
 
 class BackgroundWorker {
   constructor() {
@@ -70,11 +71,6 @@ class BackgroundWorker {
     // Set initial badge state
     this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
 
-    // Prompt-before-switch handlers (optional setting)
-    chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-      this.handleSwitchPromptResponse(notificationId, buttonIndex);
-    });
-
     // Listen for install/update
     chrome.runtime.onInstalled.addListener(() => {
       this.handleInstall();
@@ -124,14 +120,7 @@ class BackgroundWorker {
     try {
       if (!chrome?.action) return;
 
-      const on = !!enabled;
-      const count = Number(liveCount) || 0;
-      const text = count > 0 ? String(count) : '';
-      // Purple = Auto-Swap on, gray = off; the count stays glanceable either way.
-      const color = on ? '#9146ff' : '#5c5c66';
-      const title = on
-        ? (target ? `${count} live — watching ${target}` : 'Auto-Swap ON — no one live')
-        : (count > 0 ? `Auto-Swap off — ${count} live` : 'Auto-Swap off');
+      const { text, color, title } = computeBadge({ enabled, liveCount, target });
 
       chrome.action.setBadgeText({ text });
       chrome.action.setBadgeBackgroundColor({ color });
@@ -352,6 +341,15 @@ class BackgroundWorker {
 
   async promptBeforeSwitch(stream) {
     if (Date.now() < this.snoozeUntil) return;
+
+    // Re-prompting on every poll would stack a new notification each interval
+    // and orphan the previous ones (their buttons no longer match the stored
+    // pendingSwitch). Keep at most one outstanding prompt per target.
+    const { pendingSwitch } = await chrome.storage.local.get(['pendingSwitch']);
+    if (pendingSwitch?.username === stream.username
+        && Date.now() - (pendingSwitch.createdAt || 0) < 5 * 60 * 1000) {
+      return;
+    }
 
     const notificationId = `tsr_autoswap_${Date.now()}`;
     await chrome.storage.local.set({
@@ -621,6 +619,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
   worker.init()
     .then(() => worker.handleSettingsChange(changes.settings.newValue))
     .catch((e) => console.warn('Failed to apply settings change:', e));
+});
+
+// Prompt-before-switch buttons (optional setting). Registered at top level:
+// clicking the notification after the service worker was suspended re-wakes
+// it, and only synchronously-registered listeners receive that waking event —
+// a listener added inside async init() misses it. "Stream live" notification
+// clicks are handled the same way in utils/notifications.js.
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (!String(notificationId).startsWith('tsr_autoswap_')) return;
+  worker.init()
+    .then(() => worker.handleSwitchPromptResponse(notificationId, buttonIndex))
+    .catch((e) => console.warn('Failed to handle switch prompt response:', e));
 });
 
 // If the managed tab is closed, disable Auto-Swap automatically.

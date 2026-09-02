@@ -4,6 +4,8 @@ import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
 import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
+import { computeBadge } from './utils/badge.js';
+import { moveStream } from './utils/reorder.js';
 
 class PopupManager {
   constructor() {
@@ -15,6 +17,7 @@ class PopupManager {
     this.statusCheckInterval = null;
     this.dragGhost = null;
     this.dragOffset = { x: 0, y: 0 };
+    this.dropBeforeTarget = true;
     this.categorySuggestTimer = null;
     this.categorySuggestCache = new Map(); // query -> { ts, items }
   }
@@ -506,11 +509,18 @@ class PopupManager {
   updateActionBadge(enabled) {
     try {
       if (!chrome?.action) return;
-      const on = !!enabled;
-      // Only touch the color: the background worker owns the badge text
-      // (live count) and title. Writing 'ON'/green here fought the worker's
-      // count/purple scheme, and wiped the live count every popup render.
-      chrome.action.setBadgeBackgroundColor({ color: on ? '#9146ff' : '#5c5c66' });
+      // Same scheme as the background worker (shared via utils/badge.js), so
+      // the popup's instant update doesn't get repainted differently by the
+      // next background poll. this.streams is priority-sorted, so the first
+      // live entry is the one Auto-Swap would watch.
+      const { text, color, title } = computeBadge({
+        enabled,
+        liveCount: this.streams.filter((s) => s.isLive).length,
+        target: enabled ? (this.streams.find((s) => s.isLive)?.username || null) : null,
+      });
+      chrome.action.setBadgeText({ text });
+      chrome.action.setBadgeBackgroundColor({ color });
+      chrome.action.setTitle({ title });
     } catch {
       // Non-fatal
     }
@@ -746,6 +756,9 @@ class PopupManager {
           }
           
           this.dragOverElement = item;
+          // Remember which half the indicator showed, so the drop lands where
+          // the indicator promised.
+          this.dropBeforeTarget = isAbove;
         }
       });
 
@@ -769,7 +782,8 @@ class PopupManager {
         if (this.draggedElement && this.dragOverElement) {
           await this.reorderStreams(
             this.draggedElement.dataset.username,
-            this.dragOverElement.dataset.username
+            this.dragOverElement.dataset.username,
+            this.dropBeforeTarget
           );
         }
 
@@ -842,22 +856,10 @@ class PopupManager {
     }
   }
 
-  async reorderStreams(draggedUsername, targetUsername) {
-    const draggedIndex = this.streams.findIndex(s => s.username === draggedUsername);
-    const targetIndex = this.streams.findIndex(s => s.username === targetUsername);
-
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    // Remove dragged item
-    const [dragged] = this.streams.splice(draggedIndex, 1);
-    
-    // Insert at target position
-    this.streams.splice(targetIndex, 0, dragged);
-
-    // Update priorities
-    this.streams.forEach((stream, index) => {
-      stream.priority = index + 1;
-    });
+  async reorderStreams(draggedUsername, targetUsername, placeBefore = true) {
+    const reordered = moveStream(this.streams, draggedUsername, targetUsername, placeBefore);
+    if (!reordered) return;
+    this.streams = reordered;
 
     // Save immediately (no debounce for reordering)
     await storage.saveStreams(this.streams);
@@ -892,22 +894,19 @@ class PopupManager {
 
       // Update stream statuses
       let hasChanges = false;
+      // Fields the list actually displays; refresh them while a stream STAYS
+      // live too, or title/viewers/uptime go stale for as long as the popup
+      // is open.
+      const displayFields = ['title', 'game_name', 'viewer_count', 'started_at'];
       this.streams.forEach(stream => {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
         const data = statuses[stream.username] ?? null;
         const isLive = data != null;
 
-        // Re-render on live-status flips, and also when a stream that stays
-        // live changes title/category/viewers — otherwise the metadata shown
-        // in the list froze at whatever it was when the popup opened.
         if (wasLive !== isLive) {
           hasChanges = true;
-        } else if (isLive && (
-          stream.streamData?.title !== data.title ||
-          stream.streamData?.game_name !== data.game_name ||
-          stream.streamData?.viewer_count !== data.viewer_count
-        )) {
+        } else if (isLive && displayFields.some((k) => stream.streamData?.[k] !== data?.[k])) {
           hasChanges = true;
         }
 
@@ -915,7 +914,8 @@ class PopupManager {
         stream.streamData = data;
       });
 
-      if (hasChanges) {
+      // Never re-render mid-drag; the DOM rebuild would break the drag.
+      if (hasChanges && !this.draggedElement) {
         this.render();
       }
 
