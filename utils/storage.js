@@ -11,6 +11,19 @@ class StorageManager {
     this.saveQueue = new Map();
     this.saveTimeout = null;
     this.DEBOUNCE_DELAY = 300; // ms
+
+    // Each extension context (background worker, popup, options, content
+    // script) has its own StorageManager, and set()/remove() only invalidate
+    // the local cache. Writes from another context must invalidate it too,
+    // or the background worker keeps serving stale reads — e.g. the first
+    // stream added in the popup stayed invisible to the forced poll until
+    // the service worker restarted.
+    if (globalThis.chrome?.storage?.onChanged?.addListener) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        this.cache.clear();
+      });
+    }
   }
 
   /**
