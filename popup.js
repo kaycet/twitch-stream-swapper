@@ -507,9 +507,10 @@ class PopupManager {
     try {
       if (!chrome?.action) return;
       const on = !!enabled;
-      chrome.action.setBadgeText({ text: on ? 'ON' : '' });
-      chrome.action.setBadgeBackgroundColor({ color: on ? '#00dc82' : '#5c5c66' });
-      chrome.action.setTitle({ title: on ? 'Auto-Swap ON' : 'Auto-Swap OFF' });
+      // Only touch the color: the background worker owns the badge text
+      // (live count) and title. Writing 'ON'/green here fought the worker's
+      // count/purple scheme, and wiped the live count every popup render.
+      chrome.action.setBadgeBackgroundColor({ color: on ? '#9146ff' : '#5c5c66' });
     } catch {
       // Non-fatal
     }
@@ -894,13 +895,24 @@ class PopupManager {
       this.streams.forEach(stream => {
         const wasLive = stream.isLive || false;
         // Treat missing entries (invalid/filtered usernames) as offline too.
-        const isLive = statuses[stream.username] != null;
-        
+        const data = statuses[stream.username] ?? null;
+        const isLive = data != null;
+
+        // Re-render on live-status flips, and also when a stream that stays
+        // live changes title/category/viewers — otherwise the metadata shown
+        // in the list froze at whatever it was when the popup opened.
         if (wasLive !== isLive) {
-          stream.isLive = isLive;
-          stream.streamData = statuses[stream.username];
+          hasChanges = true;
+        } else if (isLive && (
+          stream.streamData?.title !== data.title ||
+          stream.streamData?.game_name !== data.game_name ||
+          stream.streamData?.viewer_count !== data.viewer_count
+        )) {
           hasChanges = true;
         }
+
+        stream.isLive = isLive;
+        stream.streamData = data;
       });
 
       if (hasChanges) {
