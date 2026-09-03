@@ -91,3 +91,62 @@ describe('module-level click delegation', () => {
     expect(chromeStub.notifications.clear).not.toHaveBeenCalled();
   });
 });
+
+describe('notifyStreamLive icon fallback', () => {
+  const THUMBNAIL_TEMPLATE = 'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-{width}x{height}.jpg';
+  const RESOLVED_THUMBNAIL = 'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-128x72.jpg';
+  let chromeStub;
+  let notificationManager;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    chromeStub = makeChromeStub();
+    vi.stubGlobal('chrome', chromeStub);
+    ({ default: notificationManager } = await import('../utils/notifications.js'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the resolved thumbnail when create accepts it', async () => {
+    await notificationManager.notifyStreamLive('somestreamer', 'Title', 'Chess', THUMBNAIL_TEMPLATE, 42);
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(1);
+    const [, options] = chromeStub.notifications.create.mock.calls[0];
+    expect(options.iconUrl).toBe(RESOLVED_THUMBNAIL);
+  });
+
+  it('retries with the bundled icon when the remote thumbnail is rejected', async () => {
+    // MV3 service workers reject remote iconUrls ("Unable to download all
+    // specified images"); the notification must still be shown.
+    chromeStub.notifications.create.mockImplementation(async (id, options) => {
+      if (options.iconUrl !== 'icons/icon-128.png') {
+        throw new Error('Unable to download all specified images.');
+      }
+    });
+
+    await notificationManager.notifyStreamLive('somestreamer', 'Title', 'Chess', THUMBNAIL_TEMPLATE, 42);
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(2);
+    const [firstId, firstOptions] = chromeStub.notifications.create.mock.calls[0];
+    const [retryId, retryOptions] = chromeStub.notifications.create.mock.calls[1];
+    expect(firstOptions.iconUrl).toBe(RESOLVED_THUMBNAIL);
+    expect(retryOptions.iconUrl).toBe('icons/icon-128.png');
+    // Same id and content, only the icon changes.
+    expect(retryId).toBe(firstId);
+    expect(retryOptions.title).toBe(firstOptions.title);
+    expect(retryOptions.message).toBe(firstOptions.message);
+  });
+
+  it('does not loop when even the bundled icon is rejected', async () => {
+    chromeStub.notifications.create.mockImplementation(async () => {
+      throw new Error('Unable to download all specified images.');
+    });
+
+    await expect(
+      notificationManager.notifyStreamLive('somestreamer', 'Title', 'Chess', null, 42),
+    ).resolves.toBeUndefined();
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(1);
+  });
+});

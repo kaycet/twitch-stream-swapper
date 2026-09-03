@@ -5,6 +5,7 @@
 import { formatViewers } from './format.js';
 
 const STREAM_LIVE_PREFIX = 'stream-live-';
+const FALLBACK_ICON = 'icons/icon-128.png';
 
 /**
  * Parse the channel name out of a "stream goes live" notification id
@@ -76,9 +77,9 @@ class NotificationManager {
 
     try {
       const notificationId = `${STREAM_LIVE_PREFIX}${username}-${Date.now()}`;
-      
+
       // Validate thumbnail URL or use default
-      let iconUrl = 'icons/icon-128.png';
+      let iconUrl = FALLBACK_ICON;
       if (thumbnailUrl) {
         try {
           // Helix returns a template URL with literal {width}x{height} placeholders;
@@ -103,7 +104,7 @@ class NotificationManager {
       const viewers = formatViewers(viewerCount);
       if (viewers) contextParts.push(`${viewers} viewers`);
 
-      await chrome.notifications.create(notificationId, {
+      const options = {
         type: 'basic',
         iconUrl: iconUrl,
         title: `${username} is now live!`,
@@ -113,7 +114,19 @@ class NotificationManager {
           { title: 'Watch Now' }
         ],
         requireInteraction: false
-      });
+      };
+
+      try {
+        await chrome.notifications.create(notificationId, options);
+      } catch (error) {
+        // MV3 only accepts data:, blob:, and extension-local iconUrls; a
+        // remote Helix thumbnail makes create() reject ("Unable to download
+        // all specified images"), which used to swallow the notification
+        // entirely. Retry once with the bundled icon so it still shows.
+        if (iconUrl === FALLBACK_ICON) throw error;
+        console.warn('Notification icon rejected, retrying with bundled icon:', error);
+        await chrome.notifications.create(notificationId, { ...options, iconUrl: FALLBACK_ICON });
+      }
       // Clicks are handled by the module-level listeners above; no
       // per-notification listeners means nothing to clean up either.
     } catch (error) {
