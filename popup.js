@@ -357,11 +357,12 @@ class PopupManager {
       }
     });
 
-    // Debounced input validation
-    let debounceTimeout;
+    // Debounced input validation. Stored on the instance so cleanup() can
+    // actually cancel it — a local variable here left cleanup() clearing a
+    // this.debounceTimeout that was always null.
     document.getElementById('streamInput').addEventListener('input', (e) => {
-      clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(() => {
+      clearTimeout(this.debounceTimeout);
+      this.debounceTimeout = setTimeout(() => {
         this.validateUsername(e.target.value);
       }, 300);
     });

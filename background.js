@@ -78,11 +78,6 @@ class BackgroundWorker {
 
     // Set initial badge state
     this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
-
-    // Listen for install/update
-    chrome.runtime.onInstalled.addListener(() => {
-      this.handleInstall();
-    });
   }
 
   async forcePollNow() {
@@ -91,13 +86,6 @@ class BackgroundWorker {
     // Bypass 5s throttle
     this.lastPollTime = 0;
     await this.pollStreams();
-  }
-
-  async handleInstall() {
-    // Extension works out of the box with hardcoded Client ID
-    // No need to open options page - it just works!
-    await storage.getSettings();
-    // Client ID is automatically set from defaults, so we're good
   }
 
   async handleSettingsChange(newSettings) {
@@ -305,7 +293,7 @@ class BackgroundWorker {
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
-        await this.handleAutoSwitch(highestPriorityLive, prioritized);
+        await this.handleAutoSwitch(highestPriorityLive);
       }
 
       // Handle category fallback if no streams are live. Fallback is part of
