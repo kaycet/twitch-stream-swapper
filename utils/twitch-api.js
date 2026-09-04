@@ -11,6 +11,7 @@ class TwitchAPI {
     this.proxyEnabled = false;
     this.cache = new Map();
     this.cacheTTL = 30000; // 30 seconds
+    this.MAX_CACHE_ENTRIES = 200;
     this.rateLimitQueue = [];
     this.rateLimitDelay = 0;
     this.requestCount = 0;
@@ -210,6 +211,7 @@ class TwitchAPI {
         data,
         timestamp: Date.now()
       });
+      this._pruneCache();
 
       return data;
     } catch (error) {
@@ -405,6 +407,27 @@ class TwitchAPI {
     } catch (error) {
       console.error('Error getting random stream:', error);
       return null;
+    }
+  }
+
+  /**
+   * Drop expired entries and cap the cache size. Expired entries were only
+   * ever deleted when their exact URL was requested again, so one-off URLs
+   * (category typeahead queries, changing user_login batches) accumulated
+   * for the life of the context — the popup and options pages live long
+   * enough for that to matter.
+   * @private
+   */
+  _pruneCache() {
+    const now = Date.now();
+    for (const [key, entry] of this.cache) {
+      if (now - entry.timestamp >= this.cacheTTL) {
+        this.cache.delete(key);
+      }
+    }
+    // Map iterates in insertion order, so the first keys are the oldest.
+    while (this.cache.size > this.MAX_CACHE_ENTRIES) {
+      this.cache.delete(this.cache.keys().next().value);
     }
   }
 
