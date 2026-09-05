@@ -76,9 +76,10 @@ class NotificationManager {
 
     try {
       const notificationId = `${STREAM_LIVE_PREFIX}${username}-${Date.now()}`;
-      
+
       // Validate thumbnail URL or use default
-      let iconUrl = 'icons/icon-128.png';
+      const DEFAULT_ICON = 'icons/icon-128.png';
+      let iconUrl = DEFAULT_ICON;
       if (thumbnailUrl) {
         try {
           // Helix returns a template URL with literal {width}x{height} placeholders;
@@ -103,7 +104,7 @@ class NotificationManager {
       const viewers = formatViewers(viewerCount);
       if (viewers) contextParts.push(`${viewers} viewers`);
 
-      await chrome.notifications.create(notificationId, {
+      const options = {
         type: 'basic',
         iconUrl: iconUrl,
         title: `${username} is now live!`,
@@ -113,7 +114,19 @@ class NotificationManager {
           { title: 'Watch Now' }
         ],
         requireInteraction: false
-      });
+      };
+
+      try {
+        await chrome.notifications.create(notificationId, options);
+      } catch (createError) {
+        // Chrome refuses notification images it cannot load — remote
+        // thumbnail URLs are a common case in MV3 (and the Twitch CDN is not
+        // in host_permissions anyway). The notification itself matters more
+        // than the thumbnail: retry once with the bundled icon instead of
+        // silently dropping the "went live" alert.
+        if (options.iconUrl === DEFAULT_ICON) throw createError;
+        await chrome.notifications.create(notificationId, { ...options, iconUrl: DEFAULT_ICON });
+      }
       // Clicks are handled by the module-level listeners above; no
       // per-notification listeners means nothing to clean up either.
     } catch (error) {

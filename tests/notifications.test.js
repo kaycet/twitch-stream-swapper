@@ -91,3 +91,66 @@ describe('module-level click delegation', () => {
     expect(chromeStub.notifications.clear).not.toHaveBeenCalled();
   });
 });
+
+describe('notifyStreamLive icon fallback', () => {
+  let chromeStub;
+  let notificationManager;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    chromeStub = makeChromeStub();
+    vi.stubGlobal('chrome', chromeStub);
+    notificationManager = (await import('../utils/notifications.js')).default;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses the resolved thumbnail URL when creation succeeds', async () => {
+    await notificationManager.notifyStreamLive(
+      'somestreamer', 'A title', 'A game',
+      'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-{width}x{height}.jpg',
+      1234
+    );
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(1);
+    const [, options] = chromeStub.notifications.create.mock.calls[0];
+    expect(options.iconUrl).toBe(
+      'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-128x72.jpg'
+    );
+  });
+
+  it('retries with the bundled icon when the thumbnail image is rejected', async () => {
+    chromeStub.notifications.create = vi.fn(async (id, options) => {
+      if (options.iconUrl !== 'icons/icon-128.png') {
+        throw new Error('Unable to download all specified images.');
+      }
+    });
+
+    await notificationManager.notifyStreamLive(
+      'somestreamer', 'A title', 'A game',
+      'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-{width}x{height}.jpg',
+      1234
+    );
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(2);
+    const [, retryOptions] = chromeStub.notifications.create.mock.calls[1];
+    expect(retryOptions.iconUrl).toBe('icons/icon-128.png');
+    // Everything except the icon stays the same on the retry.
+    expect(retryOptions.title).toBe('somestreamer is now live!');
+    expect(retryOptions.buttons).toEqual([{ title: 'Watch Now' }]);
+  });
+
+  it('does not retry (or throw) when creation fails with the bundled icon already', async () => {
+    chromeStub.notifications.create = vi.fn(async () => {
+      throw new Error('notifications disabled');
+    });
+
+    await expect(
+      notificationManager.notifyStreamLive('somestreamer', 'A title', 'A game', null, 10)
+    ).resolves.toBeUndefined();
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(1);
+  });
+});
