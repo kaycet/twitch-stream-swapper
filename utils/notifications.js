@@ -5,6 +5,57 @@
 import { formatViewers } from './format.js';
 
 const STREAM_LIVE_PREFIX = 'stream-live-';
+const FALLBACK_ICON = 'icons/icon-128.png';
+
+/**
+ * Download a stream thumbnail and inline it as a data: URL.
+ *
+ * chrome.notifications.create() only accepts extension resources, data:
+ * URLs, or blob: URLs for iconUrl — handing it the remote Helix thumbnail
+ * URL makes create() reject ("Unable to download all specified images").
+ * Helix always returns thumbnail_url for live streams, so that rejection
+ * silently dropped every "stream is live" notification.
+ *
+ * Returns null on any failure (offline, CORS, non-image response, timeout)
+ * so the caller can fall back to the packaged icon.
+ *
+ * @param {string} thumbnailUrl - Helix template URL with {width}x{height} placeholders
+ * @param {number} [timeoutMs]
+ * @returns {Promise<string|null>}
+ */
+export async function thumbnailToDataUrl(thumbnailUrl, timeoutMs = 4000) {
+  if (!thumbnailUrl || typeof globalThis.fetch !== 'function') return null;
+
+  let resolved;
+  try {
+    resolved = new URL(
+      String(thumbnailUrl).replace('{width}', '128').replace('{height}', '72')
+    ).toString();
+  } catch {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await globalThis.fetch(resolved, { signal: controller.signal });
+    if (!response?.ok) return null;
+    const blob = await response.blob();
+    if (!blob?.type?.startsWith('image/') || blob.size === 0) return null;
+
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    const CHUNK = 0x8000; // String.fromCharCode has an argument-count limit
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return `data:${blob.type};base64,${btoa(binary)}`;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Parse the channel name out of a "stream goes live" notification id
@@ -76,23 +127,10 @@ class NotificationManager {
 
     try {
       const notificationId = `${STREAM_LIVE_PREFIX}${username}-${Date.now()}`;
-      
-      // Validate thumbnail URL or use default
-      let iconUrl = 'icons/icon-128.png';
-      if (thumbnailUrl) {
-        try {
-          // Helix returns a template URL with literal {width}x{height} placeholders;
-          // substitute real dimensions or the icon fails to load.
-          const resolved = thumbnailUrl
-            .replace('{width}', '128')
-            .replace('{height}', '72');
-          // Validate URL format
-          new URL(resolved);
-          iconUrl = resolved;
-        } catch {
-          // Invalid URL, use default
-        }
-      }
+
+      // Inline the thumbnail as a data: URL (remote URLs make create() fail);
+      // fall back to the packaged icon when the download doesn't work out.
+      const iconUrl = (thumbnailUrl && await thumbnailToDataUrl(thumbnailUrl)) || FALLBACK_ICON;
 
       const message = title && title.length > 0 
         ? (title.length > 100 ? title.substring(0, 97) + '...' : title)
@@ -103,7 +141,7 @@ class NotificationManager {
       const viewers = formatViewers(viewerCount);
       if (viewers) contextParts.push(`${viewers} viewers`);
 
-      await chrome.notifications.create(notificationId, {
+      const options = {
         type: 'basic',
         iconUrl: iconUrl,
         title: `${username} is now live!`,
@@ -113,7 +151,15 @@ class NotificationManager {
           { title: 'Watch Now' }
         ],
         requireInteraction: false
-      });
+      };
+
+      try {
+        await chrome.notifications.create(notificationId, options);
+      } catch (createError) {
+        // A rejected icon must not cost the user the notification itself.
+        if (options.iconUrl === FALLBACK_ICON) throw createError;
+        await chrome.notifications.create(notificationId, { ...options, iconUrl: FALLBACK_ICON });
+      }
       // Clicks are handled by the module-level listeners above; no
       // per-notification listeners means nothing to clean up either.
     } catch (error) {

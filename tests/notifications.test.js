@@ -51,6 +51,96 @@ describe('channelFromNotificationId', () => {
   });
 });
 
+describe('notification icons', () => {
+  let chromeStub;
+  let notificationManager;
+  let thumbnailToDataUrl;
+
+  // 1x1 PNG-ish payload; content doesn't matter, only that it round-trips.
+  const IMAGE_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const THUMB_TEMPLATE = 'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-{width}x{height}.jpg';
+
+  function imageResponse({ ok = true, type = 'image/jpeg' } = {}) {
+    return {
+      ok,
+      blob: async () => new Blob([IMAGE_BYTES], { type }),
+    };
+  }
+
+  beforeEach(async () => {
+    vi.resetModules();
+    chromeStub = makeChromeStub();
+    vi.stubGlobal('chrome', chromeStub);
+    ({ default: notificationManager, thumbnailToDataUrl } = await import('../utils/notifications.js'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('thumbnailToDataUrl inlines the image and substitutes template dimensions', async () => {
+    const fetchMock = vi.fn(async () => imageResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const dataUrl = await thumbnailToDataUrl(THUMB_TEMPLATE);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://static-cdn.jtvnw.net/previews-ttv/live_user_somestreamer-128x72.jpg'
+    );
+    expect(dataUrl).toMatch(/^data:image\/jpeg;base64,/);
+  });
+
+  it('thumbnailToDataUrl returns null on fetch failure, non-OK, or non-image responses', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    expect(await thumbnailToDataUrl(THUMB_TEMPLATE)).toBe(null);
+
+    vi.stubGlobal('fetch', vi.fn(async () => imageResponse({ ok: false })));
+    expect(await thumbnailToDataUrl(THUMB_TEMPLATE)).toBe(null);
+
+    vi.stubGlobal('fetch', vi.fn(async () => imageResponse({ type: 'text/html' })));
+    expect(await thumbnailToDataUrl(THUMB_TEMPLATE)).toBe(null);
+
+    expect(await thumbnailToDataUrl('not a url')).toBe(null);
+  });
+
+  it('notifyStreamLive uses the inlined thumbnail, never the remote URL', async () => {
+    // chrome.notifications.create rejects remote iconUrl values outright
+    // ("Unable to download all specified images"), so passing the CDN URL
+    // through silently dropped the notification.
+    vi.stubGlobal('fetch', vi.fn(async () => imageResponse()));
+
+    await notificationManager.notifyStreamLive('somestreamer', 'Title', 'Just Chatting', THUMB_TEMPLATE, 123);
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledOnce();
+    const [, options] = chromeStub.notifications.create.mock.calls[0];
+    expect(options.iconUrl).toMatch(/^data:image\/jpeg;base64,/);
+  });
+
+  it('notifyStreamLive falls back to the packaged icon when the thumbnail download fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+
+    await notificationManager.notifyStreamLive('somestreamer', 'Title', 'Just Chatting', THUMB_TEMPLATE, 123);
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledOnce();
+    const [, options] = chromeStub.notifications.create.mock.calls[0];
+    expect(options.iconUrl).toBe('icons/icon-128.png');
+  });
+
+  it('notifyStreamLive retries with the packaged icon if create rejects the data URL', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => imageResponse()));
+    chromeStub.notifications.create
+      .mockRejectedValueOnce(new Error('Unable to download all specified images.'))
+      .mockResolvedValueOnce(undefined);
+
+    await notificationManager.notifyStreamLive('somestreamer', 'Title', 'Just Chatting', THUMB_TEMPLATE, 123);
+
+    expect(chromeStub.notifications.create).toHaveBeenCalledTimes(2);
+    const [, retryOptions] = chromeStub.notifications.create.mock.calls[1];
+    expect(retryOptions.iconUrl).toBe('icons/icon-128.png');
+  });
+});
+
 describe('module-level click delegation', () => {
   let chromeStub;
 
