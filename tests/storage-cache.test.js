@@ -83,6 +83,29 @@ describe('StorageManager cache invalidation', () => {
     expect(after[0].username).toBe('newbie');
   });
 
+  it('does not let array-key reads poison the cache for string-key reads', async () => {
+    // get('x') returns (and caches) the bare value; get(['x']) returns the
+    // whole {x: value} result object. They used to share one cache slot, so
+    // whichever ran first dictated the shape the other got back.
+    await chrome.storage.local.set({ runtime: { fallback: { active: true } } });
+
+    const asObject = await storage.get(['runtime']);
+    expect(asObject.runtime.fallback.active).toBe(true);
+
+    const asValue = await storage.get('runtime');
+    expect(asValue.fallback.active).toBe(true);
+  });
+
+  it('does not let string-key reads poison the cache for array-key reads', async () => {
+    await chrome.storage.local.set({ runtime: { fallback: { active: true } } });
+
+    const asValue = await storage.get('runtime');
+    expect(asValue.fallback.active).toBe(true);
+
+    const asObject = await storage.get(['runtime']);
+    expect(asObject.runtime.fallback.active).toBe(true);
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit

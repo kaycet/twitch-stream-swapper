@@ -90,13 +90,6 @@ class BackgroundWorker {
     await this.pollStreams();
   }
 
-  async handleInstall() {
-    // Extension works out of the box with hardcoded Client ID
-    // No need to open options page - it just works!
-    await storage.getSettings();
-    // Client ID is automatically set from defaults, so we're good
-  }
-
   async handleSettingsChange(newSettings) {
     this.settings = newSettings;
 
@@ -763,13 +756,12 @@ worker.init().catch(error => {
   console.error('Service worker initialization failed:', error);
 });
 
-// Also initialize on install/update (init used to register a second
-// onInstalled listener of its own for handleInstall; folded in here).
+// Also initialize on install/update. (init() used to register a second
+// onInstalled listener for a handleInstall() that only re-read settings —
+// init() already does that, so both are gone.)
 chrome.runtime.onInstalled.addListener(() => {
-  worker.init()
-    .then(() => worker.handleInstall())
-    .catch(error => {
-      console.error('Service worker initialization failed on install:', error);
-    });
+  worker.init().catch(error => {
+    console.error('Service worker initialization failed on install:', error);
+  });
 });
 

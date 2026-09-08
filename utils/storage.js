@@ -33,8 +33,11 @@ class StorageManager {
    */
   async get(keys) {
     const keyArray = Array.isArray(keys) ? keys : [keys];
-    const cacheKey = JSON.stringify(keyArray);
-    
+    // get('x') caches the bare value while get(['x']) caches a {x: value}
+    // result object, so the cache key must encode the call shape too —
+    // otherwise whichever call runs first poisons the cache for the other.
+    const cacheKey = (Array.isArray(keys) ? 'arr:' : 'str:') + JSON.stringify(keyArray);
+
     // Check cache first
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey);
