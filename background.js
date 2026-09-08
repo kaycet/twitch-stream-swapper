@@ -65,11 +65,13 @@ class BackgroundWorker {
       await twitchAPI.initialize(this.settings.clientId);
     }
 
-    // Setup idle detection
-    if (chrome.idle) {
-      chrome.idle.onStateChanged.addListener((state) => {
-        this.idleState = state;
-        this.handleIdleStateChange();
+    // Seed idle state: it defaults to 'active' on every service-worker
+    // start, so without this a worker woken by an alarm while the machine
+    // sits idle would happily poll. The onStateChanged listener lives at
+    // top level with the other waking-event listeners.
+    if (chrome.idle?.queryState) {
+      this.idleState = await new Promise((resolve) => {
+        chrome.idle.queryState(60, (state) => resolve(state || 'active'));
       });
     }
 
@@ -78,11 +80,6 @@ class BackgroundWorker {
 
     // Set initial badge state
     this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
-
-    // Listen for install/update
-    chrome.runtime.onInstalled.addListener(() => {
-      this.handleInstall();
-    });
   }
 
   async forcePollNow() {
@@ -305,7 +302,7 @@ class BackgroundWorker {
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
-        await this.handleAutoSwitch(highestPriorityLive, prioritized);
+        await this.handleAutoSwitch(highestPriorityLive);
       }
 
       // Handle category fallback if no streams are live. Fallback is part of
@@ -490,13 +487,21 @@ class BackgroundWorker {
 
         // Update the tab
         chrome.tabs.update(managedTabId, { url: streamUrl }, () => {
+          // Tab may have closed between get() and update(); reading
+          // lastError also keeps Chrome from logging "Unchecked
+          // runtime.lastError". A failed update is not a switch, so don't
+          // record one.
+          if (chrome.runtime.lastError) {
+            resolve(false);
+            return;
+          }
           this.currentWatchingStream = stream.username;
-          
+
           // Update analytics
           if (this.settings?.premiumStatus) {
             this.recordSwitch(stream.username);
           }
-          
+
           resolve(true);
         });
       });
@@ -565,9 +570,14 @@ class BackgroundWorker {
         reason,
       });
 
-      await new Promise((resolve) => {
-        chrome.tabs.update(managedTabId, { url: streamUrl }, () => resolve(true));
+      const updated = await new Promise((resolve) => {
+        chrome.tabs.update(managedTabId, { url: streamUrl }, () => {
+          // Read lastError (tab closed mid-flight) so the failure doesn't
+          // count as a switch and Chrome doesn't log it as unchecked.
+          resolve(!chrome.runtime.lastError);
+        });
       });
+      if (!updated) return false;
 
       // Count fallback redirects as switches for analytics (supporter feature).
       if (this.settings?.premiumStatus) {
@@ -729,6 +739,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     .catch((e) => console.warn('Alarm poll failed:', e));
 });
 
+// Idle transitions — registered at top level like every other waking event:
+// a listener added inside async init() dies with the suspended worker, so
+// the worker never heard "user went idle/active" transitions that happened
+// while it slept, and polling never actually paused. Top-level registration
+// makes the transition itself re-wake the worker.
+if (globalThis.chrome?.idle?.onStateChanged) {
+  chrome.idle.onStateChanged.addListener((state) => {
+    worker.idleState = state;
+    worker.init()
+      .then(() => worker.handleIdleStateChange())
+      .catch((e) => console.warn('Failed to handle idle state change:', e));
+  });
+}
+
 // Browser restart: re-establish polling.
 chrome.runtime.onStartup.addListener(() => {
   worker.init().catch((e) => console.error('Startup initialization failed:', e));
@@ -739,10 +763,13 @@ worker.init().catch(error => {
   console.error('Service worker initialization failed:', error);
 });
 
-// Also initialize on install/update
+// Also initialize on install/update (init used to register a second
+// onInstalled listener of its own for handleInstall; folded in here).
 chrome.runtime.onInstalled.addListener(() => {
-  worker.init().catch(error => {
-    console.error('Service worker initialization failed on install:', error);
-  });
+  worker.init()
+    .then(() => worker.handleInstall())
+    .catch(error => {
+      console.error('Service worker initialization failed on install:', error);
+    });
 });
 

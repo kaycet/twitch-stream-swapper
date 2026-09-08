@@ -357,11 +357,12 @@ class PopupManager {
       }
     });
 
-    // Debounced input validation
-    let debounceTimeout;
+    // Debounced input validation. Uses the instance field so cleanup() can
+    // actually clear it (it used to clear a this.debounceTimeout that was
+    // never assigned, while the live timer sat in a local variable).
     document.getElementById('streamInput').addEventListener('input', (e) => {
-      clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(() => {
+      clearTimeout(this.debounceTimeout);
+      this.debounceTimeout = setTimeout(() => {
         this.validateUsername(e.target.value);
       }, 300);
     });
@@ -476,8 +477,8 @@ class PopupManager {
     emptyState.style.display = 'none';
 
     // Render stream items
-    this.streams.forEach((stream, index) => {
-      const item = this.createStreamItem(stream, index);
+    this.streams.forEach((stream) => {
+      const item = this.createStreamItem(stream);
       listContainer.appendChild(item);
     });
 
