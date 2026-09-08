@@ -6,6 +6,7 @@ import { isTwitchUrl } from './utils/twitch-url.js';
 import { formatViewers, formatUptime } from './utils/format.js';
 import { computeBadge } from './utils/badge.js';
 import { moveStream } from './utils/reorder.js';
+import { overlayStreamStatuses } from './utils/stream-sync.js';
 import {
   createDragState,
   startDrag,
@@ -355,13 +356,28 @@ class PopupManager {
         this.updateCategoryFallbackWidget();
         this.applyTheme();
       }
+      if (changes.streams?.newValue) {
+        // The background worker refreshes isLive/wasLive/streamData on every
+        // poll. Merge those into our copy: the next list edit (bell toggle,
+        // reorder, remove) saves this.streams wholesale, and saving a stale
+        // wasLive makes the worker re-fire "went live" notifications for
+        // streams that never went offline.
+        const { streams, changed } = overlayStreamStatuses(this.streams, changes.streams.newValue);
+        this.streams = streams;
+        if (changed) {
+          // Never rebuild the list mid-drag; requestRender defers to dragend.
+          if (requestRender(this.drag)) this.render();
+          this.updateCurrentStream();
+        }
+      }
     });
 
-    // Debounced input validation
-    let debounceTimeout;
+    // Debounced input validation. Uses the instance field so cleanup() can
+    // actually clear it (it used to clear a this.debounceTimeout that was
+    // never assigned, while the live timer sat in a local variable).
     document.getElementById('streamInput').addEventListener('input', (e) => {
-      clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(() => {
+      clearTimeout(this.debounceTimeout);
+      this.debounceTimeout = setTimeout(() => {
         this.validateUsername(e.target.value);
       }, 300);
     });
@@ -476,8 +492,8 @@ class PopupManager {
     emptyState.style.display = 'none';
 
     // Render stream items
-    this.streams.forEach((stream, index) => {
-      const item = this.createStreamItem(stream, index);
+    this.streams.forEach((stream) => {
+      const item = this.createStreamItem(stream);
       listContainer.appendChild(item);
     });
 

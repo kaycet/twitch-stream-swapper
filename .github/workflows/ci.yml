@@ -32,4 +32,14 @@ jobs:
       - name: Test
         run: npm run test
 
+      # Redesign safety gate: every element ID referenced from JS must still
+      # exist in the markup. Cheap, and only useful if it actually runs.
+      - name: Audit DOM hooks
+        run: npm run audit:dom
+
+      # Catch packaging breakage (missing/renamed runtime files) on the PR
+      # instead of at release time.
+      - name: Package extension ZIP (smoke test)
+        run: npm run package
+
 

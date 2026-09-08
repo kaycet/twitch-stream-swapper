@@ -11,6 +11,7 @@ class OptionsManager {
     this.advancedDirty = false;
     this.customThemeDirty = false;
     this._analyticsRefreshTimer = null;
+    this._saveStatusTimer = null;
   }
 
   async init() {
@@ -126,7 +127,11 @@ class OptionsManager {
     wire('redirectEnabled', 'change');
     wire('promptBeforeSwitch', 'change');
     wire('fallbackEnabled', 'change');
-    wire('fallbackCategory', 'input');
+    // 'change' (commit on blur/Enter), not 'input': saving on every keystroke
+    // persisted half-typed category names, and each save restarts background
+    // polling — which can redirect the managed tab to a random stream from
+    // whatever category the partial text happened to match.
+    wire('fallbackCategory', 'change');
 
     // Custom theme inputs (live preview; requires Apply to persist)
     this.setupCustomThemeListeners();
@@ -635,10 +640,17 @@ class OptionsManager {
     statusDiv.textContent = message;
     statusDiv.className = `save-status ${type}`;
 
+    // A clear timer from an earlier message must not wipe this one — a
+    // "Saved" 3s timer used to blank a "Applying…" status mid-operation.
+    if (this._saveStatusTimer) {
+      clearTimeout(this._saveStatusTimer);
+      this._saveStatusTimer = null;
+    }
+
     // Show longer for error messages with actions
     const duration = type === 'error' ? 5000 : type === 'loading' ? 0 : 3000;
     if (duration > 0) {
-      setTimeout(() => {
+      this._saveStatusTimer = setTimeout(() => {
         statusDiv.textContent = '';
         statusDiv.className = 'save-status';
       }, duration);
