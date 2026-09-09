@@ -2,6 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -378,6 +379,18 @@ class OptionsManager {
         },
         theme: document.getElementById('theme').value,
       };
+
+      // Enabling Auto-Swap must bind the one managed Twitch tab, exactly like
+      // the popup toggle does. Saving redirectEnabled alone left
+      // managedTwitchTabId null, so the background bailed on every poll and
+      // "Enable Auto-Switching" from this page silently did nothing until the
+      // popup happened to be opened.
+      if (newSettings.redirectEnabled) {
+        const current = await storage.getSettings();
+        if (current.managedTwitchTabId == null) {
+          newSettings.managedTwitchTabId = await pickManagedTwitchTabId();
+        }
+      }
 
       // Custom theme colors are validated and persisted separately via
       // applyCustomThemeSettings(); general autosave must not touch them.
