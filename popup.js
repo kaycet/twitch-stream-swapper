@@ -189,7 +189,12 @@ class PopupManager {
     if (supportBtn) {
       supportBtn.addEventListener('click', async () => {
         try {
-          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, resolve));
+          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, () => {
+            // Read lastError so a failed create doesn't log "Unchecked
+            // runtime.lastError"; opening a support tab is best-effort.
+            void chrome.runtime.lastError;
+            resolve();
+          }));
         } catch {
           // Non-fatal
         }
@@ -582,10 +587,22 @@ class PopupManager {
         });
       });
 
+      // Read lastError in these callbacks: the tab/window can close between
+      // the get() above and these calls, and an unchecked failure logs
+      // "Unchecked runtime.lastError" (same convention as background.js).
       if (tab?.windowId != null) {
-        await new Promise((resolve) => chrome.windows.update(tab.windowId, { focused: true }, resolve));
+        await new Promise((resolve) => chrome.windows.update(tab.windowId, { focused: true }, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        }));
       }
-      await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, resolve));
+      const activated = await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, () => {
+        resolve(!chrome.runtime.lastError);
+      }));
+      if (!activated) {
+        this.showMessage('Failed to jump to managed tab', 'error');
+        return;
+      }
 
       this.showMessage('Jumped to managed tab', 'success');
     } catch (e) {
@@ -619,7 +636,12 @@ class PopupManager {
     // No Twitch tab found: create one and manage it.
     try {
       const created = await new Promise((resolve) => {
-        chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
+        chrome.tabs.create({ url: 'https://www.twitch.tv/' }, (tab) => {
+          // Read lastError so a failed create resolves null instead of
+          // logging "Unchecked runtime.lastError".
+          if (chrome.runtime.lastError) return resolve(null);
+          resolve(tab);
+        });
       });
       return created?.id ?? null;
     } catch (e) {
