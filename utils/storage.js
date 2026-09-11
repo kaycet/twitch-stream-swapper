@@ -109,6 +109,14 @@ class StorageManager {
     try {
       await chrome.storage.local.set(items);
     } catch (error) {
+      // Put the failed items back so the next flush retries them (a debounced
+      // write used to vanish silently here). Values re-queued by set() while
+      // this flush was in flight are newer — don't clobber those.
+      for (const [key, value] of Object.entries(items)) {
+        if (!this.saveQueue.has(key)) {
+          this.saveQueue.set(key, value);
+        }
+      }
       console.error('Storage set error:', error);
       throw error;
     }
