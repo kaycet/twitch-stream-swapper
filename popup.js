@@ -387,8 +387,10 @@ class PopupManager {
   async validateUsername(username) {
     if (!username || username.trim().length === 0) return;
     
-    // Basic validation - alphanumeric, underscores, hyphens
-    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
+    // Basic validation - alphanumeric and underscores. New Twitch accounts
+    // need 4+ characters, but legacy 3-character logins still exist and
+    // stream, so the minimum here is 3.
+    const valid = /^[a-zA-Z0-9_]{3,25}$/.test(username.trim());
     const input = document.getElementById('streamInput');
     
     if (!valid && username.trim().length > 0) {
@@ -407,8 +409,9 @@ class PopupManager {
       return;
     }
 
-    // Validate username format
-    if (!/^[a-zA-Z0-9_]{4,25}$/.test(username)) {
+    // Validate username format (3+ chars: legacy Twitch logins can be shorter
+    // than the 4-character minimum for new accounts)
+    if (!/^[a-zA-Z0-9_]{3,25}$/.test(username)) {
       this.showMessage('Invalid username format', 'error');
       return;
     }
