@@ -258,8 +258,10 @@ class TwitchAPI {
       return {};
     }
 
-    // Validate usernames
-    const validUsernames = usernames.filter(u => u && /^[a-zA-Z0-9_]{4,25}$/.test(u));
+    // Validate usernames. Minimum is 3, not 4: new Twitch accounts need 4+
+    // characters, but legacy 3-character logins still exist — filtering them
+    // out here made those channels permanently "offline".
+    const validUsernames = usernames.filter(u => u && /^[a-zA-Z0-9_]{3,25}$/.test(u));
     if (validUsernames.length === 0) {
       throw new Error('Invalid username format');
     }
