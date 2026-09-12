@@ -29,6 +29,7 @@ class PopupManager {
     this.dragOffset = { x: 0, y: 0 };
     this.categorySuggestTimer = null;
     this.categorySuggestCache = new Map(); // query -> { ts, items }
+    this.messageTimer = null;
   }
 
   async forcePollAndSwap() {
@@ -1070,8 +1071,14 @@ class PopupManager {
     messageDiv.textContent = text;
     messageDiv.className = `status-message show ${type}`;
 
-    setTimeout(() => {
+    // The hide timer from an earlier message must not dismiss this one early
+    // (same fix as showSaveStatus in options.js).
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
+    }
+    this.messageTimer = setTimeout(() => {
       messageDiv.classList.remove('show');
+      this.messageTimer = null;
     }, 3000);
   }
 
@@ -1081,6 +1088,9 @@ class PopupManager {
     }
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
+    }
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
     }
   }
 }
