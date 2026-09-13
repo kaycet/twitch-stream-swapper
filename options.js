@@ -2,6 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
+import { changedSettingKeys } from './utils/settings-sync.js';
 
 class OptionsManager {
   constructor() {
@@ -145,9 +146,19 @@ class OptionsManager {
   }
 
   setupStorageListeners() {
-    // Keep analytics UI live-updated while the Options page is open.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+
+      // Settings written elsewhere (popup toggles, background disabling
+      // Auto-Swap when the managed tab closes) must reach this.settings and
+      // the form controls: general autosave writes every general field back
+      // from the DOM, so a stale form silently reverts those changes on the
+      // next unrelated save.
+      if (changes.settings?.newValue) {
+        this.applyExternalSettingsChange(changes.settings.newValue);
+      }
+
+      // Keep analytics UI live-updated while the Options page is open.
       if (!this.settings?.premiumStatus) return;
       if (!changes.analytics) return;
 
@@ -157,6 +168,67 @@ class OptionsManager {
         this.loadAnalytics();
       }, 200);
     });
+  }
+
+  /**
+   * Merge a settings object just written to storage (by this page or any
+   * other context) and re-sync only the form controls whose stored value
+   * actually changed. Focused controls are left alone so an in-progress
+   * edit isn't yanked out from under the user; this page's own saves diff
+   * as empty because saveGeneralSettings updates this.settings first.
+   */
+  applyExternalSettingsChange(newSettings) {
+    const changed = changedSettingKeys(this.settings, newSettings);
+    this.settings = { ...this.settings, ...newSettings };
+    if (changed.length === 0) return;
+
+    const sync = (id, apply) => {
+      const el = document.getElementById(id);
+      if (!el || el === document.activeElement) return;
+      apply(el);
+    };
+
+    for (const key of changed) {
+      switch (key) {
+        case 'checkInterval':
+          sync('checkInterval', (el) => { el.value = String(this.settings.checkInterval || 60000); });
+          break;
+        case 'redirectEnabled':
+          sync('redirectEnabled', (el) => { el.checked = !!this.settings.redirectEnabled; });
+          break;
+        case 'promptBeforeSwitch':
+          sync('promptBeforeSwitch', (el) => { el.checked = !!this.settings.promptBeforeSwitch; });
+          break;
+        case 'fallbackCategory':
+          sync('fallbackEnabled', (el) => { el.checked = !!this.settings.fallbackCategory; });
+          sync('fallbackCategory', (el) => { el.value = this.settings.fallbackCategory || ''; });
+          break;
+        case 'notificationsEnabled':
+          sync('notificationsEnabled', (el) => { el.checked = !!this.settings.notificationsEnabled; });
+          break;
+        case 'quietHours':
+          sync('quietHoursEnabled', (el) => { el.checked = !!this.settings.quietHours?.enabled; });
+          sync('quietHoursStart', (el) => { el.value = this.settings.quietHours?.start || '22:00'; });
+          sync('quietHoursEnd', (el) => { el.value = this.settings.quietHours?.end || '08:00'; });
+          break;
+        case 'theme':
+          sync('theme', (el) => { el.value = this.settings.theme || 'default'; });
+          this.updateCustomThemeVisibility();
+          this.applyTheme();
+          break;
+        case 'customTheme':
+          this.renderCustomTheme();
+          this.applyTheme();
+          break;
+        case 'premiumStatus':
+          sync('premiumStatus', (el) => { el.checked = !!this.settings.premiumStatus; });
+          this.updatePremiumFeatures();
+          this.updateCustomThemeVisibility();
+          this.applyTheme();
+          if (this.settings.premiumStatus) this.loadAnalytics();
+          break;
+      }
+    }
   }
 
   setupCustomThemeListeners() {
