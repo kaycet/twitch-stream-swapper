@@ -429,10 +429,21 @@ class OptionsManager {
     try {
       this.showSaveStatus('Applying advanced settings…', 'loading');
 
-      // Sanity check the override (developer-only)
+      // Sanity check the override (developer-only). getCategoryId swallows
+      // API errors and returns null, so awaiting it alone could never fail —
+      // any invalid Client ID "applied" successfully and silently broke API
+      // access. A known-good category must actually resolve to an id.
       if (clientIdToSave) {
+        const previousClientId = this.settings?.clientId || TWITCH_CLIENT_ID;
         await twitchAPI.initialize(clientIdToSave);
-        await twitchAPI.getCategoryId('Just Chatting');
+        const probeId = await twitchAPI.getCategoryId('Just Chatting');
+        if (!probeId) {
+          // Leave this page's API client on the ID that was in effect.
+          await twitchAPI.initialize(previousClientId);
+          const errorInfo = ErrorMessageManager.getErrorMessage('Client ID check failed', 'saveSettings');
+          this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+          return;
+        }
       }
 
       const newSettings = { clientId: clientIdToSave };
