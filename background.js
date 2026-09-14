@@ -9,9 +9,10 @@ import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
 import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
-import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
+import { shouldRerollCategoryFallback, applyFallbackPatch } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 import { computeBadge } from './utils/badge.js';
+import { mergeStatusUpdates } from './utils/stream-sync.js';
 import { memoizeAsync } from './utils/memoize-async.js';
 import {
   NOT_NOW_BUTTON,
@@ -282,16 +283,14 @@ class BackgroundWorker {
 
       // Save updated stream statuses WITHOUT overwriting list edits that might have happened mid-poll
       // (e.g., user adds/reorders streams while we're awaiting the network call).
+      // Skip the save when nothing changed (e.g. everyone offline before and
+      // after): each write fires storage.onChanged in every context — cache
+      // flushes plus a content-script refresh in every open Twitch tab —
+      // once per poll, forever.
       const latestStreams = await storage.getStreams();
-      for (const s of latestStreams) {
-        const update = statusUpdatesByUsername.get(s.username);
-        if (update) {
-          s.isLive = update.isLive;
-          s.streamData = update.streamData;
-          s.wasLive = update.wasLive;
-        }
+      if (mergeStatusUpdates(latestStreams, statusUpdatesByUsername)) {
+        await storage.saveStreams(latestStreams);
       }
-      await storage.saveStreams(latestStreams);
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
@@ -585,16 +584,22 @@ class BackgroundWorker {
   }
 
   async setFallbackRuntime({ active, category, username, reason } = {}) {
+    const { fallback, changed } = applyFallbackPatch(this.runtime.fallback, {
+      active,
+      category,
+      username,
+      reason,
+    });
+    // No state change means nothing to persist: in the steady state (a list
+    // stream is live, or fallback is parked on a channel) this runs every
+    // poll, and writing just a fresh updatedAt fired storage.onChanged in
+    // every context — cache flushes plus a content-script refresh in every
+    // open Twitch tab — once per poll, forever. (updatedAt is never read.)
+    if (!changed) return;
+
     const next = {
       ...this.runtime,
-      fallback: {
-        ...this.runtime.fallback,
-        ...(typeof active === 'boolean' ? { active } : {}),
-        ...(category !== undefined ? { category } : {}),
-        ...(username !== undefined ? { username } : {}),
-        ...(reason !== undefined ? { reason } : {}),
-        updatedAt: Date.now(),
-      },
+      fallback: { ...fallback, updatedAt: Date.now() },
     };
     this.runtime = next;
     await storage.set({ runtime: next }, true);

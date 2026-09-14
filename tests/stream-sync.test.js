@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overlayStreamStatuses } from '../utils/stream-sync.js';
+import { overlayStreamStatuses, mergeStatusUpdates } from '../utils/stream-sync.js';
 
 /**
  * Regression tests for the popup ↔ background stream-state split.
@@ -91,5 +91,90 @@ describe('overlayStreamStatuses', () => {
     expect(overlayStreamStatuses([local()], null).changed).toBe(false);
     const { streams } = overlayStreamStatuses([local()], [null, {}, { username: 'other' }]);
     expect(streams[0].isLive).toBe(false);
+  });
+});
+
+/**
+ * mergeStatusUpdates backs the background poll loop's "skip the save when
+ * nothing changed" check. The worker used to write the streams list back
+ * after every poll unconditionally — with everyone offline that was a
+ * no-op write per poll, each one firing storage.onChanged in every context.
+ */
+describe('mergeStatusUpdates', () => {
+  const updates = (entries) => new Map(Object.entries(entries));
+
+  it('reports false when statuses are identical (everyone still offline)', () => {
+    const streams = [local(), local({ username: 'other' })];
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: false, wasLive: false, streamData: null },
+      other: { isLive: false, wasLive: false, streamData: null },
+    }));
+    expect(changed).toBe(false);
+    expect(streams[0].isLive).toBe(false);
+  });
+
+  it('reports false when a live stream repeats identical data', () => {
+    const data = { title: 'hi', game_name: 'g', viewer_count: 5, started_at: 't' };
+    const streams = [local({ isLive: true, wasLive: true, streamData: { ...data } })];
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: true, wasLive: true, streamData: { ...data } },
+    }));
+    expect(changed).toBe(false);
+  });
+
+  it('applies and reports a stream going live', () => {
+    const streams = [local()];
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: true, wasLive: true, streamData: { title: 'live now' } },
+    }));
+    expect(changed).toBe(true);
+    expect(streams[0].isLive).toBe(true);
+    expect(streams[0].streamData).toEqual({ title: 'live now' });
+  });
+
+  it('reports a viewer-count-only change in streamData', () => {
+    const before = { title: 'hi', viewer_count: 5 };
+    const streams = [local({ isLive: true, wasLive: true, streamData: before })];
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: true, wasLive: true, streamData: { ...before, viewer_count: 6 } },
+    }));
+    expect(changed).toBe(true);
+    expect(streams[0].streamData.viewer_count).toBe(6);
+  });
+
+  it('reports true for a freshly added stream with unset status fields', () => {
+    // { username, priority, addedAt } fresh from addStream: undefined -> false
+    // still counts as a change so the initial statuses get persisted.
+    const streams = [{ username: 'somestreamer', priority: 1, addedAt: 1 }];
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: false, wasLive: false, streamData: null },
+    }));
+    expect(changed).toBe(true);
+    expect(streams[0].isLive).toBe(false);
+  });
+
+  it('leaves streams without an update untouched (mid-poll list edits win)', () => {
+    const added = { username: 'addedmidpoll', priority: 2, addedAt: 1 };
+    const streams = [local(), added];
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: false, wasLive: false, streamData: null },
+    }));
+    expect(changed).toBe(false);
+    expect(streams[1]).toEqual(added);
+  });
+
+  it('keeps list fields intact while updating status fields in place', () => {
+    const streams = [local({ notify: false, priority: 7 })];
+    mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: true, wasLive: true, streamData: {} },
+    }));
+    expect(streams[0].priority).toBe(7);
+    expect(streams[0].notify).toBe(false);
+  });
+
+  it('tolerates malformed input', () => {
+    expect(mergeStatusUpdates(null, new Map())).toBe(false);
+    expect(mergeStatusUpdates([local()], null)).toBe(false);
+    expect(mergeStatusUpdates([null, {}], new Map([['x', { isLive: true }]]))).toBe(false);
   });
 });
