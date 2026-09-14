@@ -58,3 +58,50 @@ export function overlayStreamStatuses(localStreams, storageStreams) {
 
   return { streams, changed };
 }
+
+function sameStatusValue(a, b) {
+  if (Object.is(a, b)) return true;
+  // streamData is a fresh object every poll; compare by content. Helix
+  // serializes fields in a stable order, and a spurious mismatch only costs
+  // one redundant write.
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Merge the background worker's per-poll status updates into the freshly
+ * re-read streams list (mutating it, mirroring the poll loop) and report
+ * whether anything actually changed.
+ *
+ * The worker used to save the list unconditionally after every poll, even
+ * when every stream was offline before and after — and every such write
+ * fires storage.onChanged in all contexts: each StorageManager drops its
+ * cache and the content script re-renders (with a service-worker message
+ * round-trip) in every open Twitch tab. With the default 1-minute interval
+ * that churn ran forever; `changed` false means the save can be skipped.
+ *
+ * @param {Array<Object>} streams - list just re-read from storage (mutated)
+ * @param {Map<string, Object>} updatesByUsername - username -> status fields
+ * @returns {boolean} true when any status field on any stream changed
+ */
+export function mergeStatusUpdates(streams, updatesByUsername) {
+  if (!Array.isArray(streams) || !(updatesByUsername instanceof Map)) return false;
+
+  let changed = false;
+  for (const stream of streams) {
+    const update = stream?.username != null ? updatesByUsername.get(stream.username) : undefined;
+    if (!update) continue;
+    for (const field of STATUS_FIELDS) {
+      if (!(field in update)) continue;
+      if (!sameStatusValue(stream[field], update[field])) changed = true;
+      stream[field] = update[field];
+    }
+  }
+  return changed;
+}
