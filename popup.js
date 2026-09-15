@@ -64,9 +64,9 @@ class PopupManager {
       // immediately bind to a single Twitch tab (or create one) so "enable" always opens a tab.
       if (this.settings?.redirectEnabled && !this.settings?.managedTwitchTabId) {
         const managedTwitchTabId = await this.pickManagedTwitchTabId();
-        const newSettings = { ...this.settings, managedTwitchTabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        // Save only this field (see the Auto-Swap toggle handler for why).
+        await storage.saveSettings({ managedTwitchTabId });
+        this.settings = { ...this.settings, managedTwitchTabId };
         // Force a poll/swap so user sees it immediately.
         await this.forcePollAndSwap();
       }
@@ -320,10 +320,13 @@ class PopupManager {
           managedTwitchTabId = null;
         }
 
-        // Persist setting
-        const newSettings = { ...this.settings, redirectEnabled: checked, managedTwitchTabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        // Persist only the fields this toggle owns: saveSettings merges over
+        // the stored settings, while saving the whole (possibly stale)
+        // this.settings copy reverts anything written elsewhere (Options
+        // autosave, the background unbinding a closed managed tab) in the
+        // window before this page's storage.onChanged merge lands.
+        await storage.saveSettings({ redirectEnabled: checked, managedTwitchTabId });
+        this.settings = { ...this.settings, redirectEnabled: checked, managedTwitchTabId };
         this.updateAutoSwapUI();
 
         // Force a poll/swap immediately when enabling
@@ -563,9 +566,9 @@ class PopupManager {
 
       if (tabId == null) {
         tabId = await this.pickManagedTwitchTabId();
-        const newSettings = { ...this.settings, managedTwitchTabId: tabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        // Save only this field (see the Auto-Swap toggle handler for why).
+        await storage.saveSettings({ managedTwitchTabId: tabId });
+        this.settings = { ...this.settings, managedTwitchTabId: tabId };
         this.updateAutoSwapUI();
       }
 
@@ -993,12 +996,9 @@ class PopupManager {
 
   async saveFallbackCategory(categoryName) {
     const value = String(categoryName || '').trim();
-    const newSettings = {
-      ...this.settings,
-      fallbackCategory: value
-    };
-    await storage.saveSettings(newSettings);
-    this.settings = newSettings;
+    // Save only this field (see the Auto-Swap toggle handler for why).
+    await storage.saveSettings({ fallbackCategory: value });
+    this.settings = { ...this.settings, fallbackCategory: value };
     this.updateCategoryFallbackWidget();
 
     // If fallback is enabled, ensure we force a background poll so the user sees it work quickly.
