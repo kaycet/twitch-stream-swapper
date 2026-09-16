@@ -12,6 +12,7 @@ import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 import { computeBadge } from './utils/badge.js';
+import { viewingCreditSeconds } from './utils/analytics.js';
 import { memoizeAsync } from './utils/memoize-async.js';
 import {
   NOT_NOW_BUTTON,
@@ -604,16 +605,24 @@ class BackgroundWorker {
     if (!liveStream) return;
 
     const analytics = await storage.getAnalytics();
-    
-    // Update viewing time
-    const username = liveStream.username;
-    if (!analytics.viewingTime[username]) {
-      analytics.viewingTime[username] = 0;
+    const now = Date.now();
+
+    // Credit real elapsed time since the previous credit, capped at one
+    // poll interval — not a flat interval per poll. Forced polls (every
+    // popup add/remove/reorder triggers one) used to add a full interval
+    // each, inflating "viewing time" by minutes per click.
+    const credit = viewingCreditSeconds({
+      nowMs: now,
+      lastUpdateMs: analytics.lastViewingUpdate,
+      checkIntervalMs: this.settings?.checkInterval || 60000,
+    });
+    analytics.lastViewingUpdate = now;
+
+    if (credit > 0) {
+      const username = liveStream.username;
+      analytics.viewingTime = analytics.viewingTime || {};
+      analytics.viewingTime[username] = (analytics.viewingTime[username] || 0) + credit;
     }
-    
-    // Increment viewing time (in seconds, poll interval)
-    const pollIntervalSeconds = (this.settings?.checkInterval || 60000) / 1000;
-    analytics.viewingTime[username] += pollIntervalSeconds;
 
     await storage.saveAnalytics(analytics);
   }
