@@ -11,7 +11,7 @@ import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
 import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
-import { computeBadge } from './utils/badge.js';
+import { computeBadge, badgeStateFromStreams } from './utils/badge.js';
 import { memoizeAsync } from './utils/memoize-async.js';
 import {
   NOT_NOW_BUTTON,
@@ -79,7 +79,7 @@ class BackgroundWorker {
     this.startPolling();
 
     // Set initial badge state
-    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
+    await this.refreshBadge();
   }
 
   async forcePollNow() {
@@ -116,7 +116,21 @@ class BackgroundWorker {
     this.startPolling();
 
     // Update badge immediately when user toggles Auto-Swap in the popup/options.
-    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
+    // Recompute the live count from storage instead of painting 0: any
+    // settings change (theme, raid toggle, …) used to blank the count until
+    // the next poll, up to a full check interval later.
+    await this.refreshBadge();
+  }
+
+  /** Repaint the badge from the persisted stream statuses of the last poll. */
+  async refreshBadge() {
+    let state = { liveCount: 0, target: null };
+    try {
+      state = badgeStateFromStreams(await storage.getStreams());
+    } catch {
+      // Storage read failed; still paint the enabled state.
+    }
+    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, ...state });
   }
 
   updateBadge({ enabled, liveCount = 0, target } = {}) {
@@ -205,7 +219,7 @@ class BackgroundWorker {
           const newSettings = { ...this.settings, redirectEnabled: false, managedTwitchTabId: null };
           await storage.saveSettings(newSettings);
           this.settings = newSettings;
-          this.updateBadge({ enabled: false, liveCount: 0 });
+          await this.refreshBadge();
           return;
         }
       }
@@ -709,7 +723,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       const newSettings = { ...worker.settings, redirectEnabled: false, managedTwitchTabId: null };
       await storage.saveSettings(newSettings);
       worker.settings = newSettings;
-      worker.updateBadge({ enabled: false, liveCount: 0 });
+      await worker.refreshBadge();
     })
     .catch((e) => console.warn('Failed to disable Auto-Swap on tab close:', e));
 });
