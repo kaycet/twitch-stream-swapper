@@ -13,6 +13,7 @@ import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 import { computeBadge } from './utils/badge.js';
 import { memoizeAsync } from './utils/memoize-async.js';
+import { serializeAsync } from './utils/serialize-async.js';
 import {
   NOT_NOW_BUTTON,
   isAutoswapNotificationId,
@@ -32,6 +33,13 @@ class BackgroundWorker {
     // worker lifetime, but a rejected init is forgotten so the next event
     // retries instead of inheriting a permanently failed promise.
     this.init = memoizeAsync(() => this._init());
+    // Serialized: a popup-forced poll bypasses the 5s throttle by design, so
+    // it could otherwise interleave with an alarm poll mid-await — both
+    // holding the same pre-save wasLive snapshot, both firing "went live"
+    // notifications and switch-prompt cards for the same stream. Queued
+    // callers still hit the throttle when they run, so only forced polls
+    // (lastPollTime = 0) actually re-poll.
+    this.pollStreams = serializeAsync(() => this._pollStreams());
     this.runtime = {
       fallback: {
         active: false,
@@ -178,7 +186,7 @@ class BackgroundWorker {
     chrome.alarms.create('tsr-poll-retry', { delayInMinutes: Math.max(1, delayMs / 60000) });
   }
 
-  async pollStreams() {
+  async _pollStreams() {
     // Ensure modules are loaded
     if (!storage || !twitchAPI) {
       console.warn('Modules not loaded yet, skipping poll');

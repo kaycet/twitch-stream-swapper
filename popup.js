@@ -469,8 +469,9 @@ class PopupManager {
     const streamCount = document.getElementById('streamCount');
     const premiumBadge = document.getElementById('premiumBadge');
 
-    // Update count
-    streamCount.textContent = `${this.streams.length} stream${this.streams.length !== 1 ? 's' : ''}`;
+    // Update count ("channel" to match the rest of the UI copy, e.g. the
+    // "Add channel" button and the empty state)
+    streamCount.textContent = `${this.streams.length} channel${this.streams.length !== 1 ? 's' : ''}`;
     
     // Show premium badge
     if (this.settings?.premiumStatus) {
@@ -499,12 +500,17 @@ class PopupManager {
 
     // Setup drag and drop
     this.setupDragAndDrop();
-    
+
     // Update category fallback widget
     this.updateCategoryFallbackWidget();
 
     // Update auto-swap UI
     this.updateAutoSwapUI();
+
+    // Re-apply the current-stream highlight: the rows above were rebuilt
+    // without their `is-current` class, so without this a bell toggle or
+    // remove/reorder dropped the LIVE marker until the next 30s status poll.
+    this.updateCurrentStream();
   }
 
   updateAutoSwapUI() {

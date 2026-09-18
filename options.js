@@ -75,9 +75,11 @@ class OptionsManager {
       if (e.target.value !== 'default' && !this.settings.premiumStatus) {
         this.showPremiumReminder();
       }
-      // Show/hide custom theme editor and live-apply
+      // Show/hide custom theme editor and live-apply. Preview from the form,
+      // not this.settings: the saved theme only updates after autosave (or
+      // Apply, for custom), so applyTheme() alone previewed nothing.
       this.updateCustomThemeVisibility();
-      this.applyTheme();
+      this.applyTheme(this.readThemePreview());
 
       // Only autosave theme selection when not custom. Custom requires Apply.
       if (e.target.value === 'custom') {
@@ -182,11 +184,13 @@ class OptionsManager {
       const hexEl = document.getElementById(hexId);
       if (!colorEl || !hexEl) continue;
 
-      // Color picker drives hex input
+      // Color picker drives hex input. Preview from the form (see the theme
+      // change listener): applyTheme() with no argument re-applies the saved
+      // colors, so the edited ones were never visible before Apply.
       colorEl.addEventListener('input', () => {
         const hex = normalizeHex(colorEl.value);
         if (hex) hexEl.value = hex;
-        this.applyTheme();
+        this.applyTheme(this.readThemePreview());
         this.setCustomThemeDirty(true);
       });
 
@@ -201,7 +205,7 @@ class OptionsManager {
         } else {
           hexEl.classList.remove('input-error');
         }
-        this.applyTheme();
+        this.applyTheme(this.readThemePreview());
         this.setCustomThemeDirty(true);
       });
     }
@@ -223,9 +227,27 @@ class OptionsManager {
     if (this.autoSaveTimer) {
       clearTimeout(this.autoSaveTimer);
     }
+    // Null the handle once the save has fired so flushPendingAutoSave() can
+    // tell "save pending" apart from "already saved".
     this.autoSaveTimer = setTimeout(() => {
+      this.autoSaveTimer = null;
       this.saveGeneralSettings();
     }, this.AUTO_SAVE_DELAY_MS);
+  }
+
+  /**
+   * Flush a pending debounced autosave immediately. Wired to pagehide: the
+   * 600ms timer dies with the document, so toggling a setting and closing
+   * the tab within the debounce window silently dropped the change — e.g.
+   * Auto-Switch stayed enabled while the user believed they turned it off.
+   */
+  flushPendingAutoSave() {
+    if (!this.autoSaveTimer) return;
+    clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = null;
+    // storage.saveSettings() writes immediately (no debounce); the write is
+    // handed to the extension process, so it survives the page going away.
+    this.saveGeneralSettings();
   }
 
   render() {
@@ -576,17 +598,47 @@ class OptionsManager {
     }
   }
 
-  applyTheme() {
-    const theme = this.settings.theme || 'default';
+  /**
+   * Read the theme select + custom color inputs as a preview object for
+   * applyTheme(). Only well-formed #RRGGBB values are included, so a
+   * half-typed hex falls back to the saved color instead of producing an
+   * invalid CSS custom property.
+   */
+  readThemePreview() {
+    const saved = this.settings?.customTheme || {};
+    const hex = (id, fallback) => {
+      const v = String(document.getElementById(id)?.value || '').trim();
+      return /^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback;
+    };
+    return {
+      theme: document.getElementById('theme')?.value || this.settings?.theme || 'default',
+      customTheme: {
+        accent: hex('customAccentHex', saved.accent),
+        bg: hex('customBgHex', saved.bg),
+        panel: hex('customPanelHex', saved.panel),
+        text: hex('customTextHex', saved.text),
+        border: hex('customBorderHex', saved.border),
+        muted: hex('customMutedHex', saved.muted),
+      },
+    };
+  }
+
+  /**
+   * @param {{theme?: string, customTheme?: Object}} [preview] - form state to
+   *   paint instead of the saved settings (live preview); persisted values
+   *   are used when omitted. The supporter gates apply either way.
+   */
+  applyTheme(preview) {
+    const theme = preview?.theme || this.settings.theme || 'default';
     document.body.className = `theme-${theme}`;
-    
+
     // Remove any previously injected theme link(s)
     document.querySelectorAll('link[data-tsr-theme="1"]').forEach((el) => el.remove());
 
     // Apply custom theme variables (supporter-only)
     if (theme === 'custom') {
       if (this.settings.premiumStatus) {
-        const t = this.settings.customTheme || {};
+        const t = preview?.customTheme || this.settings.customTheme || {};
         this.applyCustomThemeVars(t);
       }
       return;
@@ -661,4 +713,11 @@ class OptionsManager {
 // Initialize options page
 const optionsManager = new OptionsManager();
 optionsManager.init();
+
+// Flush a pending debounced autosave before the page goes away (tab close,
+// navigation, backgrounding on mobile). pagehide also fires on bfcache
+// entry, which is fine — flushing is idempotent.
+window.addEventListener('pagehide', () => {
+  optionsManager.flushPendingAutoSave();
+});
 
