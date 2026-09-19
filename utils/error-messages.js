@@ -24,7 +24,14 @@ class ErrorMessageManager {
    * @returns {Object} - { message: string, type: 'error'|'warning'|'info', action?: string }
    */
   static getErrorMessage(error, context = 'general') {
-    const errorMessage = error?.message || error || 'An unknown error occurred';
+    // Callers hand us Errors and plain strings, but this runs inside catch
+    // blocks — a non-string here (an object, a number, an Error with a
+    // non-string message) must degrade to the generic copy, not throw and
+    // mask the original failure.
+    const raw = error?.message ?? error;
+    const errorMessage = typeof raw === 'string' && raw.length > 0
+      ? raw
+      : 'An unknown error occurred';
     const errorString = errorMessage.toLowerCase();
     // utils/twitch-api.js stamps a machine-readable code on everything it
     // throws; trust that first and fall back to message sniffing only for
