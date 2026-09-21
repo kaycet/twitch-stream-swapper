@@ -70,4 +70,10 @@ describe('pickManagedTwitchTabId', () => {
     });
     await expect(pickManagedTwitchTabId()).resolves.toBe(null);
   });
+
+  it('returns null when tab creation reports runtime.lastError', async () => {
+    globalThis.chrome = makeChromeStub({ activeTab: null, twitchTabs: [] });
+    chrome.runtime = { lastError: { message: 'Tab creation blocked' } };
+    await expect(pickManagedTwitchTabId()).resolves.toBe(null);
+  });
 });

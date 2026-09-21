@@ -40,7 +40,12 @@ export async function pickManagedTwitchTabId() {
   // No Twitch tab found: create one and manage it.
   try {
     const created = await new Promise((resolve) => {
-      chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
+      chrome.tabs.create({ url: 'https://www.twitch.tv/' }, (tab) => {
+        // Read lastError so a failed create resolves null instead of
+        // logging "Unchecked runtime.lastError".
+        if (chrome.runtime?.lastError) return resolve(null);
+        resolve(tab);
+      });
     });
     return created?.id ?? null;
   } catch (e) {

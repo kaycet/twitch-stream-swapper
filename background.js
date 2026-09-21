@@ -228,6 +228,12 @@ class BackgroundWorker {
       const streams = await storage.getStreams();
       if (streams.length === 0) {
         this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
+        // An empty list still counts as "no streams live": category fallback
+        // must run here too, or enabling Auto-Swap + a fallback category with
+        // no streams configured silently does nothing.
+        if (this.settings?.redirectEnabled && this.settings?.fallbackCategory) {
+          await this.handleCategoryFallback({ force: false, reason: 'auto' });
+        }
         return;
       }
 
