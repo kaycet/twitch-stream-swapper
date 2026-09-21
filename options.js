@@ -3,6 +3,7 @@ import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
 import { changedSettingKeys } from './utils/settings-sync.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -458,6 +459,17 @@ class OptionsManager {
       if (newSettings.fallbackCategory) {
         // eslint-disable-next-line no-control-regex
         newSettings.fallbackCategory = newSettings.fallbackCategory.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 50);
+      }
+
+      // Auto-Swap only works bound to exactly one Twitch tab. The popup binds
+      // one when its toggle is flipped; do the same here, or enabling from
+      // Options shows "ON" while the background worker has no tab to switch.
+      const wasEnabled = !!this.settings.redirectEnabled;
+      if (newSettings.redirectEnabled && !wasEnabled) {
+        newSettings.managedTwitchTabId = await pickManagedTwitchTabId();
+      } else if (!newSettings.redirectEnabled && wasEnabled) {
+        // Match the popup: disabling unbinds the managed tab.
+        newSettings.managedTwitchTabId = null;
       }
 
       await storage.saveSettings(newSettings);
