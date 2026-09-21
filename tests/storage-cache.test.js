@@ -131,6 +131,18 @@ describe('StorageManager cache invalidation', () => {
     expect(store.get('analytics')?.switchCount).toBe(2);
   });
 
+  it('merges a partial settings save over stored settings instead of replacing them', async () => {
+    // Callers (popup, options) pass only the fields they change; fields
+    // written by other contexts in the meantime must survive the merge.
+    await storage.saveSettings({ theme: 'midnight', stayOnRaid: false });
+    await storage.saveSettings({ fallbackCategory: 'Art' });
+
+    const settings = store.get('settings');
+    expect(settings.theme).toBe('midnight');
+    expect(settings.stayOnRaid).toBe(false);
+    expect(settings.fallbackCategory).toBe('Art');
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit
