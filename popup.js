@@ -268,16 +268,18 @@ class PopupManager {
         // When the user picks a datalist option or blurs after typing, apply it.
         const value = fallbackInput.value.trim();
         if (!value) return;
-        await this.saveFallbackCategory(value);
-        this.showMessage('Category fallback updated', 'success');
+        if (await this.saveFallbackCategory(value)) {
+          this.showMessage('Category fallback updated', 'success');
+        }
       });
       fallbackInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           const value = fallbackInput.value.trim();
           if (!value) return;
-          await this.saveFallbackCategory(value);
-          this.showMessage('Category fallback updated', 'success');
+          if (await this.saveFallbackCategory(value)) {
+            this.showMessage('Category fallback updated', 'success');
+          }
         }
       });
     }
@@ -957,8 +959,19 @@ class PopupManager {
     }
   }
 
+  /**
+   * @returns {boolean} true when a save happened; false when the value was
+   *   already persisted (callers skip their "updated" toast then).
+   */
   async saveFallbackCategory(categoryName) {
     const value = String(categoryName || '').trim();
+    // Enter in the input saves, then the same value's 'change' event fires on
+    // blur and saved again — and every save restarts background polling. Skip
+    // saves that would not change anything.
+    if (value === String(this.settings?.fallbackCategory || '').trim()) {
+      this.updateCategoryFallbackWidget();
+      return false;
+    }
     const newSettings = {
       ...this.settings,
       fallbackCategory: value
@@ -969,6 +982,7 @@ class PopupManager {
 
     // If fallback is enabled, ensure we force a background poll so the user sees it work quickly.
     await this.forcePollAndSwap();
+    return true;
   }
 
   scheduleCategorySuggestions(query) {
