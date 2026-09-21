@@ -43,7 +43,12 @@ class OptionsManager {
         }
       }
       this.settings.premiumStatus = checked;
-      storage.saveSettings(this.settings).then(() => {
+      // Save only this field: saveSettings merges over the stored settings,
+      // while saving the whole (possibly stale) this.settings clobbered
+      // changes made elsewhere while this page was open — e.g. enabling
+      // Auto-Swap in the popup, then toggling Supporter here, silently
+      // turned Auto-Swap back off.
+      storage.saveSettings({ premiumStatus: checked }).then(() => {
         this.updatePremiumFeatures();
         if (this.settings.premiumStatus) this.loadAnalytics();
         this.showSaveStatus('Saved', 'success');
