@@ -3,7 +3,7 @@ import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
 import { changedSettingKeys } from './utils/settings-sync.js';
-import { pickManagedTwitchTabId } from './utils/managed-tab.js';
+import { managedTabAction, pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -491,19 +491,38 @@ class OptionsManager {
       // Auto-Swap only works bound to exactly one Twitch tab. The popup binds
       // one when its toggle is flipped; do the same here, or enabling from
       // Options shows "ON" while the background worker has no tab to switch.
-      const wasEnabled = !!this.settings.redirectEnabled;
-      if (newSettings.redirectEnabled && !wasEnabled) {
-        newSettings.managedTwitchTabId = await pickManagedTwitchTabId();
-      } else if (!newSettings.redirectEnabled && wasEnabled) {
+      const action = managedTabAction({
+        wasEnabled: !!this.settings.redirectEnabled,
+        willBeEnabled: !!newSettings.redirectEnabled,
+        currentTabId: this.settings.managedTwitchTabId,
+      });
+      if (action === 'unbind') {
         // Match the popup: disabling unbinds the managed tab.
         newSettings.managedTwitchTabId = null;
       }
 
+      // Write the form fields FIRST. Binding a managed tab is async
+      // (chrome.tabs.query, possibly chrome.tabs.create), and this runs on
+      // the pagehide flush too — where the document is already going away,
+      // those callbacks never fire, and awaiting them ahead of the write
+      // dropped the entire save, not just the binding.
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
 
+      if (action === 'bind') {
+        // saveSettings merges, so this second write only touches the one
+        // field. Auto-Swap is inert (shouldSwitchToStream bails on a null
+        // managed tab) for the moment between the two writes.
+        const managedTwitchTabId = await pickManagedTwitchTabId();
+        await storage.saveSettings({ managedTwitchTabId });
+        this.settings = { ...this.settings, managedTwitchTabId };
+      }
+
       this.showSaveStatus('Saved', 'success');
-      this.applyTheme();
+      // Keep any unsaved custom-colour preview on screen: a no-argument
+      // applyTheme() repaints from the stored customTheme, so an autosave
+      // for an unrelated control silently reverted the preview.
+      this.applyTheme(this.readThemePreview());
 
       // Reload analytics if premium
       if (this.settings.premiumStatus) {

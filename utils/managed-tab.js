@@ -11,6 +11,30 @@
 import { isTwitchUrl } from './twitch-url.js';
 
 /**
+ * What a settings save should do to the managed-tab binding (pure).
+ *
+ * 'bind' covers two cases, not just the off→on toggle: a stored
+ * redirectEnabled of true with no managed tab is a broken state that
+ * nothing else repairs. The background worker's missing-tab check is gated
+ * on `managedTwitchTabId != null`, so it never notices, and only the popup
+ * fixes it on open — Auto-Swap reads "ON" and does nothing until then.
+ * pickManagedTwitchTabId() returning null (tab creation blocked, or an
+ * upgrade from a build that predates the field) is how you land there.
+ *
+ * @param {Object} args
+ * @param {boolean} args.wasEnabled - stored redirectEnabled before this save
+ * @param {boolean} args.willBeEnabled - redirectEnabled being saved
+ * @param {number|null|undefined} args.currentTabId - stored managedTwitchTabId
+ * @returns {'bind'|'unbind'|null} null means leave the binding alone
+ */
+export function managedTabAction({ wasEnabled, willBeEnabled, currentTabId } = {}) {
+  if (willBeEnabled) {
+    return (!wasEnabled || currentTabId == null) ? 'bind' : null;
+  }
+  return wasEnabled ? 'unbind' : null;
+}
+
+/**
  * Pick the Twitch tab Auto-Swap should manage: the active tab if it is a
  * Twitch tab, else any existing Twitch tab, else a newly created one.
  * @returns {Promise<number|null>} Tab id, or null if none could be found or created.

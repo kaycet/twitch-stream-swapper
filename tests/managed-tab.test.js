@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { managedTabAction } from '../utils/managed-tab.js';
 
 /**
  * Tests for utils/managed-tab.js — the shared "which Twitch tab does
@@ -75,5 +76,50 @@ describe('pickManagedTwitchTabId', () => {
     globalThis.chrome = makeChromeStub({ activeTab: null, twitchTabs: [] });
     chrome.runtime = { lastError: { message: 'Tab creation blocked' } };
     await expect(pickManagedTwitchTabId()).resolves.toBe(null);
+  });
+});
+
+/**
+ * managedTabAction — the Options page's bind/unbind decision.
+ *
+ * The off→on transition is not the only case that needs a binding: a stored
+ * redirectEnabled of true with a null managedTwitchTabId is a broken state
+ * (pickManagedTwitchTabId() can return null when tab creation is blocked,
+ * and upgrades from builds predating the field land there too). The
+ * background worker gates its missing-tab check on `managedTwitchTabId !=
+ * null`, so nothing repairs it except opening the popup — Auto-Swap reads
+ * "ON" and silently does nothing until then.
+ */
+describe('managedTabAction', () => {
+  it('binds on an off -> on transition', () => {
+    expect(managedTabAction({ wasEnabled: false, willBeEnabled: true, currentTabId: null }))
+      .toBe('bind');
+  });
+
+  it('binds when already enabled but nothing is bound', () => {
+    expect(managedTabAction({ wasEnabled: true, willBeEnabled: true, currentTabId: null }))
+      .toBe('bind');
+    expect(managedTabAction({ wasEnabled: true, willBeEnabled: true, currentTabId: undefined }))
+      .toBe('bind');
+  });
+
+  it('leaves an existing binding alone', () => {
+    expect(managedTabAction({ wasEnabled: true, willBeEnabled: true, currentTabId: 42 }))
+      .toBe(null);
+  });
+
+  it('unbinds on an on -> off transition', () => {
+    expect(managedTabAction({ wasEnabled: true, willBeEnabled: false, currentTabId: 42 }))
+      .toBe('unbind');
+  });
+
+  it('does nothing when Auto-Swap stays off', () => {
+    expect(managedTabAction({ wasEnabled: false, willBeEnabled: false, currentTabId: null }))
+      .toBe(null);
+  });
+
+  it('treats tab id 0 as bound, not as missing', () => {
+    expect(managedTabAction({ wasEnabled: true, willBeEnabled: true, currentTabId: 0 }))
+      .toBe(null);
   });
 });
