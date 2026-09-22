@@ -298,8 +298,9 @@ class PopupManager {
           fallbackInput?.focus();
           return;
         }
-        await this.saveFallbackCategory(value);
-        this.showMessage('Category fallback updated', 'success');
+        if (await this.saveFallbackCategory(value)) {
+          this.showMessage('Category fallback updated', 'success');
+        }
       });
     }
 
