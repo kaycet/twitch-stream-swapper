@@ -265,7 +265,7 @@ describe('Options general autosave', () => {
     expect(store.get('settings').managedTwitchTabId).toBe(77);
   });
 
-  it('forces a poll after binding, so the throttle does not swallow it', async () => {
+  it('sends TSR_FORCE_POLL after binding a managed tab', async () => {
     await boot(baseSettings());
 
     dom.get('redirectEnabled').checked = true;
@@ -303,35 +303,12 @@ describe('Options general autosave', () => {
     expect(painted).not.toContainEqual(['--accent', '#111111']);
   });
 
-  it('still persists the form on a flush with a cold settings cache', async () => {
+  it('writes the form on a flush and skips the tab binding entirely', async () => {
     await boot(baseSettings());
 
-    // Any write from any context clears StorageManager's cache, so a cold
-    // cache on pagehide is the normal case, not the edge case. Stall the
-    // storage read as well as chrome.tabs: on pagehide no chrome callback is
-    // guaranteed to fire, and saveSettings() used to await a read first.
-    const storage = (await import('../utils/storage.js')).default;
-    storage.cache.clear();
-    globalThis.chrome.tabs.query.mockImplementation(() => {});
-    globalThis.chrome.tabs.create.mockImplementation(() => {});
-    globalThis.chrome.storage.local.get = () => new Promise(() => {});
-
-    dom.get('redirectEnabled').checked = true;
-    dom.get('checkInterval').value = '600000';
-    dom.get('redirectEnabled').fire('change');
-    pagehide();
-    await settle();
-
-    expect(store.get('settings').checkInterval).toBe(600000);
-    expect(store.get('settings').redirectEnabled).toBe(true);
-  });
-
-  it('still persists the form when the tab binding never resolves', async () => {
-    await boot(baseSettings());
-
-    // The pagehide case: the document is going away, so chrome.tabs
-    // callbacks never fire. The settings write must not be queued behind
-    // them.
+    // pagehide: the document is going away, so no chrome.tabs callback can
+    // come back. The binding must be skipped outright rather than awaited,
+    // and the form fields must still land.
     globalThis.chrome.tabs.query.mockImplementation(() => {});
     globalThis.chrome.tabs.create.mockImplementation(() => {});
 
@@ -343,5 +320,11 @@ describe('Options general autosave', () => {
 
     expect(store.get('settings').redirectEnabled).toBe(true);
     expect(store.get('settings').checkInterval).toBe(600000);
+
+    // Not merely "the binding hung" — it was never attempted.
+    expect(globalThis.chrome.tabs.query).not.toHaveBeenCalled();
+    expect(globalThis.chrome.tabs.create).not.toHaveBeenCalled();
+    // The inert, self-healing state the skip is supposed to leave behind.
+    expect(store.get('settings').managedTwitchTabId).toBe(null);
   });
 });

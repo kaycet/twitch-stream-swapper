@@ -227,18 +227,22 @@ class StorageManager {
    * Save settings. Merges over the stored settings, so callers pass only the
    * fields they own.
    *
+   * The read before the write is not optional. All settings live in one
+   * storage key, so a write always rewrites the whole object, and the only
+   * thing that keeps a partial save from clobbering another context's fields
+   * is basing it on a fresh read. An in-memory copy is not a substitute: it
+   * is only as current as the last storage.onChanged delivered to that
+   * context, and a write whose event has not arrived yet would be silently
+   * reverted. That is the bug this merge exists to prevent.
+   *
+   * The cost is that a caller which cannot await — the Options page's
+   * pagehide flush — can lose the save entirely if the read never comes
+   * back. Losing a save is the lesser failure; see flushPendingAutoSave().
+   *
    * @param {Object} settings - the fields to write
-   * @param {Object} [opts]
-   * @param {Object} [opts.mergeBase] - merge over this instead of reading
-   *   storage. The Options page's pagehide flush needs it: the document is
-   *   already going away there, so chrome.storage.local.get's callback is no
-   *   more guaranteed to fire than chrome.tabs' — awaiting a read before the
-   *   write dropped the entire save whenever the settings cache was cold
-   *   (any write from any context clears it). Callers pass their own
-   *   in-memory copy, which storage.onChanged keeps current.
    */
-  async saveSettings(settings, { mergeBase = null } = {}) {
-    const current = mergeBase || await this.getSettings();
+  async saveSettings(settings) {
+    const current = await this.getSettings();
     // Immediate write: settings saves come from the popup/options pages, which
     // can close (and the MV3 service worker can suspend) before a debounced
     // flush fires — a debounced write here silently drops the user's change.

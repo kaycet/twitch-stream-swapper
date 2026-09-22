@@ -167,9 +167,12 @@ describe('background poll loop', () => {
     expect(stored().streamData.viewer_count).toBe(5);
 
     // The commonest poll outcome by far: still live, only streamData moved.
-    // This is the case that regresses if background.js ever stops replacing
-    // stream.streamData wholesale -- an in-place merge would mutate the
-    // snapshot too and the write would be skipped again.
+    // This exercises the priorByUsername path end to end. It does NOT cover
+    // statusSnapshot's deep copy -- background.js replaces streamData
+    // wholesale, so a bare reference snapshot still points at the old
+    // object and still reports the change. The deep copy is guarded by
+    // "decouples the snapshot from streamData mutated in place" in
+    // tests/stream-sync.test.js, which does fail without it.
     api.checkStreamsStatus = async () => ({
       alpha: { title: 'T2', game_name: 'G', viewer_count: 1234, started_at: 'x', thumbnail_url: 'u' },
     });

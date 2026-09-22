@@ -527,35 +527,40 @@ class OptionsManager {
 
       // Write the form fields FIRST. Binding a managed tab is async
       // (chrome.tabs.query, possibly chrome.tabs.create), and this runs on
-      // the pagehide flush too — where the document is already going away,
-      // those callbacks never fire, and awaiting them ahead of the write
+      // the pagehide flush too — where the document is already going away
+      // and those callbacks never fire. Awaiting them ahead of the write
       // dropped the entire save, not just the binding.
       //
-      // On the flush path the merge base is this page's own copy rather than
-      // a fresh read, so nothing is awaited before the write lands.
-      // storage.onChanged keeps this.settings in sync while the page is
-      // open (applyExternalSettingsChange), so it is as good a base.
-      await storage.saveSettings(newSettings, flushing ? { mergeBase: this.settings } : undefined);
+      // saveSettings() still reads before it writes, so on the flush path
+      // this can itself be lost if that read does not come back. That is
+      // deliberate: settings live in one storage key, so skipping the read
+      // would rewrite the whole object from this page's in-memory copy and
+      // silently revert any field another context wrote whose onChanged has
+      // not been delivered here yet. Losing our own save beats reverting
+      // someone else's.
+      await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
 
-      // Binding needs chrome.tabs, which cannot answer during a flush. The
-      // enabled + null state written above is inert but self-healing: the
-      // next autosave here, or the next popup open, re-binds it.
+      // Binding needs chrome.tabs, which cannot answer during a flush, so
+      // skip it there rather than hang. The enabled + null state written
+      // above is inert, and the next autosave here or the next popup open
+      // re-binds it — though not before the user comes back, so the toggle
+      // reads ON and does nothing until then.
       if (action === 'bind' && !flushing) {
         const managedTwitchTabId = await pickManagedTwitchTabId();
         await storage.saveSettings({ managedTwitchTabId });
         this.settings = { ...this.settings, managedTwitchTabId };
 
-        // Force a poll. Both writes above fire storage.onChanged, so the
-        // worker restarts polling twice — and the second poll, the only one
-        // that sees a valid binding, hits the 5s throttle and returns. That
-        // left Auto-Swap visibly doing nothing for up to a full check
-        // interval. The popup's toggle sends the same message.
-        try {
-          await chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' });
-        } catch (err) {
-          console.warn('Failed to trigger force poll:', err);
-        }
+        // Force a poll, without awaiting it. Both writes above fire
+        // storage.onChanged, so the worker restarts polling twice — and the
+        // second poll, the only one that sees a valid binding, hits the 5s
+        // throttle and returns, leaving Auto-Swap visibly dead for up to a
+        // full check interval. Not awaited because forcePollNow() resolves
+        // only after a whole network poll, which with retries and rate-limit
+        // backoff can exceed a minute — and 'Saving…' has no timeout, so
+        // awaiting it pinned the page on a status that was already untrue.
+        chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' })
+          ?.catch?.((err) => console.warn('Failed to trigger force poll:', err));
       }
 
       this.showSaveStatus('Saved', 'success');
