@@ -120,8 +120,13 @@ describe('background poll loop', () => {
     const handler = harness.messageListeners[0];
     forcePoll = async () => {
       await new Promise((resolve) => handler({ type: 'TSR_FORCE_POLL' }, {}, resolve));
-      // Let the debounced analytics/runtime writes settle.
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // Drain microtasks only. Everything asserted here goes through
+      // storage.set(..., true), which reaches chrome.storage.local.set
+      // before it resolves; `analytics` is the one debounced key and
+      // nothing below reads it. A fixed sleep would just be slower, and
+      // would leave the previous case's pending flush landing in the next
+      // case's store.
+      for (let i = 0; i < 50; i += 1) await Promise.resolve();
     };
   });
 
@@ -154,6 +159,24 @@ describe('background poll loop', () => {
     expect(stored().isLive).toBe(false);
     expect(stored().wasLive).toBe(false);
     expect(stored().streamData).toBe(null);
+  });
+
+  it('persists a title or viewer-count change while a stream stays live', async () => {
+    live = true;
+    await forcePoll();
+    expect(stored().streamData.viewer_count).toBe(5);
+
+    // The commonest poll outcome by far: still live, only streamData moved.
+    // This is the case that regresses if background.js ever stops replacing
+    // stream.streamData wholesale -- an in-place merge would mutate the
+    // snapshot too and the write would be skipped again.
+    api.checkStreamsStatus = async () => ({
+      alpha: { title: 'T2', game_name: 'G', viewer_count: 1234, started_at: 'x', thumbnail_url: 'u' },
+    });
+    await forcePoll();
+
+    expect(stored().streamData.viewer_count).toBe(1234);
+    expect(stored().streamData.title).toBe('T2');
   });
 
   it('does not re-notify after a service-worker restart while still live', async () => {

@@ -70,7 +70,11 @@ function makeChrome(store) {
   const storageListeners = [];
   return {
     chrome: {
-      runtime: { lastError: null, onMessage: { addListener() {} }, sendMessage: async () => ({}) },
+      runtime: {
+        lastError: null,
+        onMessage: { addListener() {} },
+        sendMessage: vi.fn(async () => ({})),
+      },
       storage: {
         local: {
           async get(keys) {
@@ -105,7 +109,19 @@ describe('Options general autosave', () => {
   let dom;
   let pagehide;
 
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  // Everything asserted here is written through storage.set(..., true),
+  // which hits chrome.storage.local.set before it resolves, so a microtask
+  // drain is enough — no arbitrary sleep.
+  const settle = async () => { for (let i = 0; i < 50; i += 1) await Promise.resolve(); };
+
+  // Let the real 600ms autosave debounce fire, which is the path a user
+  // takes when they change a setting and leave the page open. The flush
+  // path (pagehide) deliberately behaves differently: it cannot bind a
+  // managed tab, because chrome.tabs callbacks never come back.
+  const debounce = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await settle();
+  };
 
   async function boot(settings) {
     vi.resetModules();
@@ -176,8 +192,7 @@ describe('Options general autosave', () => {
 
     dom.get('redirectEnabled').checked = true;
     dom.get('redirectEnabled').fire('change');
-    pagehide();
-    await settle();
+    await debounce();
 
     expect(store.get('settings').redirectEnabled).toBe(true);
     expect(store.get('settings').managedTwitchTabId).toBe(77);
@@ -192,8 +207,7 @@ describe('Options general autosave', () => {
     // Autosave for an unrelated control — Auto-Swap itself does not move.
     dom.get('checkInterval').value = '300000';
     dom.get('checkInterval').fire('change');
-    pagehide();
-    await settle();
+    await debounce();
 
     expect(store.get('settings').checkInterval).toBe(300000);
     expect(store.get('settings').redirectEnabled).toBe(true);
@@ -205,8 +219,7 @@ describe('Options general autosave', () => {
 
     dom.get('checkInterval').value = '120000';
     dom.get('checkInterval').fire('change');
-    pagehide();
-    await settle();
+    await debounce();
 
     expect(store.get('settings').managedTwitchTabId).toBe(42);
     expect(globalThis.chrome.tabs.create).not.toHaveBeenCalled();
@@ -217,11 +230,100 @@ describe('Options general autosave', () => {
 
     dom.get('redirectEnabled').checked = false;
     dom.get('redirectEnabled').fire('change');
-    pagehide();
-    await settle();
+    await debounce();
 
     expect(store.get('settings').redirectEnabled).toBe(false);
     expect(store.get('settings').managedTwitchTabId).toBe(null);
+  });
+
+  it('never publishes an enabled Auto-Swap next to a stale managed tab id', async () => {
+    // Reachable legacy state: the shipped 1.3.4 Options page never touched
+    // managedTwitchTabId, so disabling Auto-Swap there left the id set.
+    await boot(baseSettings({ redirectEnabled: false, managedTwitchTabId: 42 }));
+
+    const seen = [];
+    const realSet = globalThis.chrome.storage.local.set;
+    globalThis.chrome.storage.local.set = async (items) => {
+      if (items.settings) {
+        seen.push({
+          redirectEnabled: items.settings.redirectEnabled,
+          managedTwitchTabId: items.settings.managedTwitchTabId,
+        });
+      }
+      return realSet(items);
+    };
+
+    dom.get('redirectEnabled').checked = true;
+    dom.get('redirectEnabled').fire('change');
+    await debounce();
+
+    // The background worker acts on `enabled + stale id`: its immediate poll
+    // either finds the dead tab and switches Auto-Swap back off, or finds the
+    // id reassigned to an unrelated Twitch tab and redirects it.
+    const bad = seen.filter((s) => s.redirectEnabled && s.managedTwitchTabId === 42);
+    expect(bad).toEqual([]);
+    expect(store.get('settings').managedTwitchTabId).toBe(77);
+  });
+
+  it('forces a poll after binding, so the throttle does not swallow it', async () => {
+    await boot(baseSettings());
+
+    dom.get('redirectEnabled').checked = true;
+    dom.get('redirectEnabled').fire('change');
+    await debounce();
+
+    // Both writes restart polling via storage.onChanged, and the second poll
+    // -- the only one with a valid binding -- hits the worker's 5s throttle.
+    expect(globalThis.chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'TSR_FORCE_POLL' });
+  });
+
+  it('keeps an unsaved custom-colour preview through an unrelated autosave', async () => {
+    await boot(baseSettings({
+      premiumStatus: true,
+      theme: 'custom',
+      customTheme: { accent: '#111111', bg: '#222222', panel: '#333333', text: '#444444', border: '#555555', muted: '#666666' },
+    }));
+
+    const painted = [];
+    dom.document.documentElement.style.setProperty = (name, value) => painted.push([name, value]);
+
+    // User edits a colour but has not pressed Apply, so the stored
+    // customTheme still holds the old value.
+    dom.get('customAccentHex').value = '#ABCDEF';
+
+    // Autosave for a control that has nothing to do with the theme.
+    dom.get('notificationsEnabled').checked = false;
+    dom.get('notificationsEnabled').fire('change');
+    await debounce();
+
+    expect(store.get('settings').notificationsEnabled).toBe(false);
+    // A no-argument applyTheme() here repaints from the stored customTheme
+    // and silently throws away the edit.
+    expect(painted).toContainEqual(['--accent', '#ABCDEF']);
+    expect(painted).not.toContainEqual(['--accent', '#111111']);
+  });
+
+  it('still persists the form on a flush with a cold settings cache', async () => {
+    await boot(baseSettings());
+
+    // Any write from any context clears StorageManager's cache, so a cold
+    // cache on pagehide is the normal case, not the edge case. Stall the
+    // storage read as well as chrome.tabs: on pagehide no chrome callback is
+    // guaranteed to fire, and saveSettings() used to await a read first.
+    const storage = (await import('../utils/storage.js')).default;
+    storage.cache.clear();
+    globalThis.chrome.tabs.query.mockImplementation(() => {});
+    globalThis.chrome.tabs.create.mockImplementation(() => {});
+    globalThis.chrome.storage.local.get = () => new Promise(() => {});
+
+    dom.get('redirectEnabled').checked = true;
+    dom.get('checkInterval').value = '600000';
+    dom.get('redirectEnabled').fire('change');
+    pagehide();
+    await settle();
+
+    expect(store.get('settings').checkInterval).toBe(600000);
+    expect(store.get('settings').redirectEnabled).toBe(true);
   });
 
   it('still persists the form when the tab binding never resolves', async () => {

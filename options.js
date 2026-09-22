@@ -323,9 +323,12 @@ class OptionsManager {
     if (!this.autoSaveTimer) return;
     clearTimeout(this.autoSaveTimer);
     this.autoSaveTimer = null;
-    // storage.saveSettings() writes immediately (no debounce); the write is
-    // handed to the extension process, so it survives the page going away.
-    this.saveGeneralSettings();
+    // `flushing` makes the save reach chrome.storage.local.set without
+    // awaiting anything first. The document is already going away here, so
+    // no chrome API callback is guaranteed to fire again — not
+    // chrome.tabs.query and not chrome.storage.local.get either, which
+    // saveSettings() normally awaits to build its merge base.
+    this.saveGeneralSettings({ flushing: true });
   }
 
   render() {
@@ -456,7 +459,13 @@ class OptionsManager {
     }, 5000);
   }
 
-  async saveGeneralSettings() {
+  /**
+   * @param {Object} [opts]
+   * @param {boolean} [opts.flushing] - called from pagehide: reach
+   *   chrome.storage.local.set with no await in front of it, and skip the
+   *   managed-tab binding, whose chrome.tabs callbacks cannot come back.
+   */
+  async saveGeneralSettings({ flushing = false } = {}) {
     try {
       this.showSaveStatus('Saving…', 'loading');
 
@@ -499,6 +508,21 @@ class OptionsManager {
       if (action === 'unbind') {
         // Match the popup: disabling unbinds the managed tab.
         newSettings.managedTwitchTabId = null;
+      } else if (action === 'bind') {
+        // Clear the binding in this first write, do not leave the stored one
+        // in place. saveSettings() merges, so omitting the field would
+        // publish redirectEnabled: true next to whatever id was already
+        // there — and a stale id is reachable: the shipped 1.3.4 Options
+        // page never touched managedTwitchTabId, so disabling Auto-Swap
+        // there left it set. The background worker acts on that pairing
+        // within the window below: its immediate poll would either find the
+        // dead tab and switch Auto-Swap back off (racing, and losing, the
+        // second write), or find that Chrome had reassigned the id to an
+        // unrelated Twitch tab and redirect it. enabled + null is the only
+        // genuinely inert pairing — shouldSwitchToStream and
+        // handleCategoryFallback both bail on it, and the missing-tab check
+        // is gated on `managedTwitchTabId != null`.
+        newSettings.managedTwitchTabId = null;
       }
 
       // Write the form fields FIRST. Binding a managed tab is async
@@ -506,16 +530,32 @@ class OptionsManager {
       // the pagehide flush too — where the document is already going away,
       // those callbacks never fire, and awaiting them ahead of the write
       // dropped the entire save, not just the binding.
-      await storage.saveSettings(newSettings);
+      //
+      // On the flush path the merge base is this page's own copy rather than
+      // a fresh read, so nothing is awaited before the write lands.
+      // storage.onChanged keeps this.settings in sync while the page is
+      // open (applyExternalSettingsChange), so it is as good a base.
+      await storage.saveSettings(newSettings, flushing ? { mergeBase: this.settings } : undefined);
       this.settings = { ...this.settings, ...newSettings };
 
-      if (action === 'bind') {
-        // saveSettings merges, so this second write only touches the one
-        // field. Auto-Swap is inert (shouldSwitchToStream bails on a null
-        // managed tab) for the moment between the two writes.
+      // Binding needs chrome.tabs, which cannot answer during a flush. The
+      // enabled + null state written above is inert but self-healing: the
+      // next autosave here, or the next popup open, re-binds it.
+      if (action === 'bind' && !flushing) {
         const managedTwitchTabId = await pickManagedTwitchTabId();
         await storage.saveSettings({ managedTwitchTabId });
         this.settings = { ...this.settings, managedTwitchTabId };
+
+        // Force a poll. Both writes above fire storage.onChanged, so the
+        // worker restarts polling twice — and the second poll, the only one
+        // that sees a valid binding, hits the 5s throttle and returns. That
+        // left Auto-Swap visibly doing nothing for up to a full check
+        // interval. The popup's toggle sends the same message.
+        try {
+          await chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' });
+        } catch (err) {
+          console.warn('Failed to trigger force poll:', err);
+        }
       }
 
       this.showSaveStatus('Saved', 'success');

@@ -120,8 +120,14 @@ export function mergeStatusUpdates(streams, updatesByUsername, priorByUsername =
 }
 
 /**
- * Snapshot a stream list's status fields, by value, before anything mutates
- * them. Feeds mergeStatusUpdates()'s `priorByUsername`.
+ * Snapshot a stream list's status fields before anything mutates them.
+ * Feeds mergeStatusUpdates()'s `priorByUsername`.
+ *
+ * `streamData` is copied one level deep, not merely referenced: a reference
+ * would be defeated by any future code that edited the stored object in
+ * place instead of replacing it, and the whole point of this snapshot is to
+ * hold the pre-poll values. Nested objects are still shared — Helix payloads
+ * are flat, and the poll replaces `streamData` wholesale today.
  *
  * @param {Array<Object>} streams
  * @returns {Map<string, Object>} username -> {isLive, wasLive, streamData}
@@ -133,7 +139,10 @@ export function statusSnapshot(streams) {
     if (stream?.username == null) continue;
     const entry = {};
     for (const field of STATUS_FIELDS) {
-      entry[field] = stream[field];
+      const value = stream[field];
+      entry[field] = (value && typeof value === 'object' && !Array.isArray(value))
+        ? { ...value }
+        : value;
     }
     snapshot.set(stream.username, entry);
   }

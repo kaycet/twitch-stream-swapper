@@ -224,11 +224,21 @@ class StorageManager {
   }
 
   /**
-   * Save settings
-   * @param {Object} settings - Settings object
+   * Save settings. Merges over the stored settings, so callers pass only the
+   * fields they own.
+   *
+   * @param {Object} settings - the fields to write
+   * @param {Object} [opts]
+   * @param {Object} [opts.mergeBase] - merge over this instead of reading
+   *   storage. The Options page's pagehide flush needs it: the document is
+   *   already going away there, so chrome.storage.local.get's callback is no
+   *   more guaranteed to fire than chrome.tabs' — awaiting a read before the
+   *   write dropped the entire save whenever the settings cache was cold
+   *   (any write from any context clears it). Callers pass their own
+   *   in-memory copy, which storage.onChanged keeps current.
    */
-  async saveSettings(settings) {
-    const current = await this.getSettings();
+  async saveSettings(settings, { mergeBase = null } = {}) {
+    const current = mergeBase || await this.getSettings();
     // Immediate write: settings saves come from the popup/options pages, which
     // can close (and the MV3 service worker can suspend) before a debounced
     // flush fires — a debounced write here silently drops the user's change.

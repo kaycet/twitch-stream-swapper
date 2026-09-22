@@ -243,6 +243,24 @@ describe('mergeStatusUpdates with a prior snapshot', () => {
     expect(snap.get('somestreamer')).toEqual({ isLive: false, wasLive: false, streamData: { title: 'a' } });
   });
 
+  it('decouples the snapshot from streamData mutated in place', () => {
+    // The fix only works if the snapshot holds the PRE-poll streamData. A
+    // bare reference copy would be defeated by any code that merged into
+    // the stored object instead of replacing it, silently restoring the
+    // original bug for every title/viewer-count change.
+    const stream = local({ isLive: true, wasLive: true, streamData: { title: 'a', viewer_count: 1 } });
+    const snap = statusSnapshot([stream]);
+
+    Object.assign(stream.streamData, { title: 'b', viewer_count: 2 });
+
+    expect(snap.get('somestreamer').streamData).toEqual({ title: 'a', viewer_count: 1 });
+
+    const changed = mergeStatusUpdates([stream], new Map([
+      ['somestreamer', { isLive: true, wasLive: true, streamData: stream.streamData }],
+    ]), snap);
+    expect(changed).toBe(true);
+  });
+
   it('tolerates malformed input', () => {
     expect(statusSnapshot(null).size).toBe(0);
     expect(mergeStatusUpdates([local()], new Map(), 'not a map')).toBe(false);
