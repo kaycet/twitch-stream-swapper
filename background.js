@@ -13,7 +13,7 @@ import { shouldRerollCategoryFallback, applyFallbackPatch } from './utils/fallba
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 import { computeBadge, badgeStateFromStreams } from './utils/badge.js';
 import { viewingCreditSeconds } from './utils/analytics.js';
-import { mergeStatusUpdates } from './utils/stream-sync.js';
+import { mergeStatusUpdates, statusSnapshot } from './utils/stream-sync.js';
 import { memoizeAsync } from './utils/memoize-async.js';
 import { serializeAsync } from './utils/serialize-async.js';
 import {
@@ -246,6 +246,14 @@ class BackgroundWorker {
         return;
       }
 
+      // Snapshot the statuses as they stand in storage BEFORE the loop below
+      // writes this poll's values onto these very stream objects. The
+      // post-poll re-read can hand back the same cached array, and comparing
+      // it to itself reports "nothing changed" for a stream that just went
+      // live — the save is skipped, storage keeps wasLive false, and every
+      // service-worker restart re-fires the "went live" notification.
+      const priorStatuses = statusSnapshot(streams);
+
       // Sort by priority
       const prioritized = [...streams].sort((a, b) => a.priority - b.priority);
 
@@ -317,7 +325,7 @@ class BackgroundWorker {
       // flushes plus a content-script refresh in every open Twitch tab —
       // once per poll, forever.
       const latestStreams = await storage.getStreams();
-      if (mergeStatusUpdates(latestStreams, statusUpdatesByUsername)) {
+      if (mergeStatusUpdates(latestStreams, statusUpdatesByUsername, priorStatuses)) {
         await storage.saveStreams(latestStreams);
       }
 

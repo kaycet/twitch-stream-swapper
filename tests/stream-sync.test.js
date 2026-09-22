@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overlayStreamStatuses, mergeStatusUpdates } from '../utils/stream-sync.js';
+import { overlayStreamStatuses, mergeStatusUpdates, statusSnapshot } from '../utils/stream-sync.js';
 
 /**
  * Regression tests for the popup ↔ background stream-state split.
@@ -176,5 +176,75 @@ describe('mergeStatusUpdates', () => {
     expect(mergeStatusUpdates(null, new Map())).toBe(false);
     expect(mergeStatusUpdates([local()], null)).toBe(false);
     expect(mergeStatusUpdates([null, {}], new Map([['x', { isLive: true }]]))).toBe(false);
+  });
+});
+
+/**
+ * statusSnapshot + mergeStatusUpdates' `priorByUsername`.
+ *
+ * StorageManager.get() caches and hands back the very array it cached, so
+ * the worker's post-poll re-read can be the same objects the poll loop just
+ * wrote this poll's statuses onto. Comparing those to the updates compares
+ * them to themselves: a stream that went live reported "nothing changed",
+ * the save was skipped, and storage kept wasLive false forever — which
+ * re-fired the "went live" notification on every service-worker restart.
+ */
+describe('mergeStatusUpdates with a prior snapshot', () => {
+  const updates = (entries) => new Map(Object.entries(entries));
+
+  it('detects a change the aliased list cannot see', () => {
+    const streams = [local({ isLive: false, wasLive: false, streamData: null })];
+    const prior = statusSnapshot(streams);
+
+    // The poll loop mutates the shared objects, then the "re-read" aliases them.
+    streams[0].isLive = true;
+    streams[0].wasLive = true;
+    streams[0].streamData = { title: 'live now' };
+
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: true, wasLive: true, streamData: { title: 'live now' } },
+    }), prior);
+
+    expect(changed).toBe(true);
+  });
+
+  it('still reports false when the statuses genuinely did not move', () => {
+    const streams = [local({ isLive: false, wasLive: false, streamData: null })];
+    const prior = statusSnapshot(streams);
+
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: false, wasLive: false, streamData: null },
+    }), prior);
+
+    expect(changed).toBe(false);
+  });
+
+  it('detects a change the snapshot cannot see (list re-read mid-poll)', () => {
+    const prior = statusSnapshot([local({ isLive: true, wasLive: true, streamData: null })]);
+    // Re-read really did come back from storage, with an older status.
+    const streams = [local({ isLive: false, wasLive: false, streamData: null })];
+
+    const changed = mergeStatusUpdates(streams, updates({
+      somestreamer: { isLive: true, wasLive: true, streamData: null },
+    }), prior);
+
+    expect(changed).toBe(true);
+    expect(streams[0].isLive).toBe(true);
+  });
+
+  it('snapshots by value and skips entries without a username', () => {
+    const stream = local({ isLive: false, streamData: { title: 'a' } });
+    const snap = statusSnapshot([stream, {}, null]);
+
+    stream.isLive = true;
+    stream.streamData = { title: 'b' };
+
+    expect(snap.size).toBe(1);
+    expect(snap.get('somestreamer')).toEqual({ isLive: false, wasLive: false, streamData: { title: 'a' } });
+  });
+
+  it('tolerates malformed input', () => {
+    expect(statusSnapshot(null).size).toBe(0);
+    expect(mergeStatusUpdates([local()], new Map(), 'not a map')).toBe(false);
   });
 });
