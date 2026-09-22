@@ -2,6 +2,8 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
+import { changedSettingKeys } from './utils/settings-sync.js';
+import { managedTabAction, pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -41,7 +43,12 @@ class OptionsManager {
         }
       }
       this.settings.premiumStatus = checked;
-      storage.saveSettings(this.settings).then(() => {
+      // Save only this field: saveSettings merges over the stored settings,
+      // while saving the whole (possibly stale) this.settings clobbered
+      // changes made elsewhere while this page was open — e.g. enabling
+      // Auto-Swap in the popup, then toggling Supporter here, silently
+      // turned Auto-Swap back off.
+      storage.saveSettings({ premiumStatus: checked }).then(() => {
         this.updatePremiumFeatures();
         if (this.settings.premiumStatus) this.loadAnalytics();
         this.showSaveStatus('Saved', 'success');
@@ -75,9 +82,11 @@ class OptionsManager {
       if (e.target.value !== 'default' && !this.settings.premiumStatus) {
         this.showPremiumReminder();
       }
-      // Show/hide custom theme editor and live-apply
+      // Show/hide custom theme editor and live-apply. Preview from the form,
+      // not this.settings: the saved theme only updates after autosave (or
+      // Apply, for custom), so applyTheme() alone previewed nothing.
       this.updateCustomThemeVisibility();
-      this.applyTheme();
+      this.applyTheme(this.readThemePreview());
 
       // Only autosave theme selection when not custom. Custom requires Apply.
       if (e.target.value === 'custom') {
@@ -145,9 +154,19 @@ class OptionsManager {
   }
 
   setupStorageListeners() {
-    // Keep analytics UI live-updated while the Options page is open.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+
+      // Settings written elsewhere (popup toggles, background disabling
+      // Auto-Swap when the managed tab closes) must reach this.settings and
+      // the form controls: general autosave writes every general field back
+      // from the DOM, so a stale form silently reverts those changes on the
+      // next unrelated save.
+      if (changes.settings?.newValue) {
+        this.applyExternalSettingsChange(changes.settings.newValue);
+      }
+
+      // Keep analytics UI live-updated while the Options page is open.
       if (!this.settings?.premiumStatus) return;
       if (!changes.analytics) return;
 
@@ -157,6 +176,67 @@ class OptionsManager {
         this.loadAnalytics();
       }, 200);
     });
+  }
+
+  /**
+   * Merge a settings object just written to storage (by this page or any
+   * other context) and re-sync only the form controls whose stored value
+   * actually changed. Focused controls are left alone so an in-progress
+   * edit isn't yanked out from under the user; this page's own saves diff
+   * as empty because saveGeneralSettings updates this.settings first.
+   */
+  applyExternalSettingsChange(newSettings) {
+    const changed = changedSettingKeys(this.settings, newSettings);
+    this.settings = { ...this.settings, ...newSettings };
+    if (changed.length === 0) return;
+
+    const sync = (id, apply) => {
+      const el = document.getElementById(id);
+      if (!el || el === document.activeElement) return;
+      apply(el);
+    };
+
+    for (const key of changed) {
+      switch (key) {
+        case 'checkInterval':
+          sync('checkInterval', (el) => { el.value = String(this.settings.checkInterval || 60000); });
+          break;
+        case 'redirectEnabled':
+          sync('redirectEnabled', (el) => { el.checked = !!this.settings.redirectEnabled; });
+          break;
+        case 'promptBeforeSwitch':
+          sync('promptBeforeSwitch', (el) => { el.checked = !!this.settings.promptBeforeSwitch; });
+          break;
+        case 'fallbackCategory':
+          sync('fallbackEnabled', (el) => { el.checked = !!this.settings.fallbackCategory; });
+          sync('fallbackCategory', (el) => { el.value = this.settings.fallbackCategory || ''; });
+          break;
+        case 'notificationsEnabled':
+          sync('notificationsEnabled', (el) => { el.checked = !!this.settings.notificationsEnabled; });
+          break;
+        case 'quietHours':
+          sync('quietHoursEnabled', (el) => { el.checked = !!this.settings.quietHours?.enabled; });
+          sync('quietHoursStart', (el) => { el.value = this.settings.quietHours?.start || '22:00'; });
+          sync('quietHoursEnd', (el) => { el.value = this.settings.quietHours?.end || '08:00'; });
+          break;
+        case 'theme':
+          sync('theme', (el) => { el.value = this.settings.theme || 'default'; });
+          this.updateCustomThemeVisibility();
+          this.applyTheme();
+          break;
+        case 'customTheme':
+          this.renderCustomTheme();
+          this.applyTheme();
+          break;
+        case 'premiumStatus':
+          sync('premiumStatus', (el) => { el.checked = !!this.settings.premiumStatus; });
+          this.updatePremiumFeatures();
+          this.updateCustomThemeVisibility();
+          this.applyTheme();
+          if (this.settings.premiumStatus) this.loadAnalytics();
+          break;
+      }
+    }
   }
 
   setupCustomThemeListeners() {
@@ -182,11 +262,13 @@ class OptionsManager {
       const hexEl = document.getElementById(hexId);
       if (!colorEl || !hexEl) continue;
 
-      // Color picker drives hex input
+      // Color picker drives hex input. Preview from the form (see the theme
+      // change listener): applyTheme() with no argument re-applies the saved
+      // colors, so the edited ones were never visible before Apply.
       colorEl.addEventListener('input', () => {
         const hex = normalizeHex(colorEl.value);
         if (hex) hexEl.value = hex;
-        this.applyTheme();
+        this.applyTheme(this.readThemePreview());
         this.setCustomThemeDirty(true);
       });
 
@@ -201,7 +283,7 @@ class OptionsManager {
         } else {
           hexEl.classList.remove('input-error');
         }
-        this.applyTheme();
+        this.applyTheme(this.readThemePreview());
         this.setCustomThemeDirty(true);
       });
     }
@@ -223,9 +305,30 @@ class OptionsManager {
     if (this.autoSaveTimer) {
       clearTimeout(this.autoSaveTimer);
     }
+    // Null the handle once the save has fired so flushPendingAutoSave() can
+    // tell "save pending" apart from "already saved".
     this.autoSaveTimer = setTimeout(() => {
+      this.autoSaveTimer = null;
       this.saveGeneralSettings();
     }, this.AUTO_SAVE_DELAY_MS);
+  }
+
+  /**
+   * Flush a pending debounced autosave immediately. Wired to pagehide: the
+   * 600ms timer dies with the document, so toggling a setting and closing
+   * the tab within the debounce window silently dropped the change — e.g.
+   * Auto-Switch stayed enabled while the user believed they turned it off.
+   */
+  flushPendingAutoSave() {
+    if (!this.autoSaveTimer) return;
+    clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = null;
+    // `flushing` makes the save reach chrome.storage.local.set without
+    // awaiting anything first. The document is already going away here, so
+    // no chrome API callback is guaranteed to fire again — not
+    // chrome.tabs.query and not chrome.storage.local.get either, which
+    // saveSettings() normally awaits to build its merge base.
+    this.saveGeneralSettings({ flushing: true });
   }
 
   render() {
@@ -356,7 +459,13 @@ class OptionsManager {
     }, 5000);
   }
 
-  async saveGeneralSettings() {
+  /**
+   * @param {Object} [opts]
+   * @param {boolean} [opts.flushing] - called from pagehide: reach
+   *   chrome.storage.local.set with no await in front of it, and skip the
+   *   managed-tab binding, whose chrome.tabs callbacks cannot come back.
+   */
+  async saveGeneralSettings({ flushing = false } = {}) {
     try {
       this.showSaveStatus('Saving…', 'loading');
 
@@ -388,11 +497,77 @@ class OptionsManager {
         newSettings.fallbackCategory = newSettings.fallbackCategory.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 50);
       }
 
+      // Auto-Swap only works bound to exactly one Twitch tab. The popup binds
+      // one when its toggle is flipped; do the same here, or enabling from
+      // Options shows "ON" while the background worker has no tab to switch.
+      const action = managedTabAction({
+        wasEnabled: !!this.settings.redirectEnabled,
+        willBeEnabled: !!newSettings.redirectEnabled,
+        currentTabId: this.settings.managedTwitchTabId,
+      });
+      if (action === 'unbind') {
+        // Match the popup: disabling unbinds the managed tab.
+        newSettings.managedTwitchTabId = null;
+      } else if (action === 'bind') {
+        // Clear the binding in this first write, do not leave the stored one
+        // in place. saveSettings() merges, so omitting the field would
+        // publish redirectEnabled: true next to whatever id was already
+        // there — and a stale id is reachable: the shipped 1.3.4 Options
+        // page never touched managedTwitchTabId, so disabling Auto-Swap
+        // there left it set. The background worker acts on that pairing
+        // within the window below: its immediate poll would either find the
+        // dead tab and switch Auto-Swap back off (racing, and losing, the
+        // second write), or find that Chrome had reassigned the id to an
+        // unrelated Twitch tab and redirect it. enabled + null is the only
+        // genuinely inert pairing — shouldSwitchToStream and
+        // handleCategoryFallback both bail on it, and the missing-tab check
+        // is gated on `managedTwitchTabId != null`.
+        newSettings.managedTwitchTabId = null;
+      }
+
+      // Write the form fields FIRST. Binding a managed tab is async
+      // (chrome.tabs.query, possibly chrome.tabs.create), and this runs on
+      // the pagehide flush too — where the document is already going away
+      // and those callbacks never fire. Awaiting them ahead of the write
+      // dropped the entire save, not just the binding.
+      //
+      // saveSettings() still reads before it writes, so on the flush path
+      // this can itself be lost if that read does not come back. That is
+      // deliberate: settings live in one storage key, so skipping the read
+      // would rewrite the whole object from this page's in-memory copy and
+      // silently revert any field another context wrote whose onChanged has
+      // not been delivered here yet. Losing our own save beats reverting
+      // someone else's.
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
 
+      // Binding needs chrome.tabs, which cannot answer during a flush, so
+      // skip it there rather than hang. The enabled + null state written
+      // above is inert, and the next autosave here or the next popup open
+      // re-binds it — though not before the user comes back, so the toggle
+      // reads ON and does nothing until then.
+      if (action === 'bind' && !flushing) {
+        const managedTwitchTabId = await pickManagedTwitchTabId();
+        await storage.saveSettings({ managedTwitchTabId });
+        this.settings = { ...this.settings, managedTwitchTabId };
+
+        // Force a poll, without awaiting it. Both writes above fire
+        // storage.onChanged, so the worker restarts polling twice — and the
+        // second poll, the only one that sees a valid binding, hits the 5s
+        // throttle and returns, leaving Auto-Swap visibly dead for up to a
+        // full check interval. Not awaited because forcePollNow() resolves
+        // only after a whole network poll, which with retries and rate-limit
+        // backoff can exceed a minute — and 'Saving…' has no timeout, so
+        // awaiting it pinned the page on a status that was already untrue.
+        chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' })
+          ?.catch?.((err) => console.warn('Failed to trigger force poll:', err));
+      }
+
       this.showSaveStatus('Saved', 'success');
-      this.applyTheme();
+      // Keep any unsaved custom-colour preview on screen: a no-argument
+      // applyTheme() repaints from the stored customTheme, so an autosave
+      // for an unrelated control silently reverted the preview.
+      this.applyTheme(this.readThemePreview());
 
       // Reload analytics if premium
       if (this.settings.premiumStatus) {
@@ -429,10 +604,21 @@ class OptionsManager {
     try {
       this.showSaveStatus('Applying advanced settings…', 'loading');
 
-      // Sanity check the override (developer-only)
+      // Sanity check the override (developer-only). getCategoryId swallows
+      // API errors and returns null, so awaiting it alone could never fail —
+      // any invalid Client ID "applied" successfully and silently broke API
+      // access. A known-good category must actually resolve to an id.
       if (clientIdToSave) {
+        const previousClientId = this.settings?.clientId || TWITCH_CLIENT_ID;
         await twitchAPI.initialize(clientIdToSave);
-        await twitchAPI.getCategoryId('Just Chatting');
+        const probeId = await twitchAPI.getCategoryId('Just Chatting');
+        if (!probeId) {
+          // Leave this page's API client on the ID that was in effect.
+          await twitchAPI.initialize(previousClientId);
+          const errorInfo = ErrorMessageManager.getErrorMessage('Client ID check failed', 'saveSettings');
+          this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+          return;
+        }
       }
 
       const newSettings = { clientId: clientIdToSave };
@@ -576,17 +762,47 @@ class OptionsManager {
     }
   }
 
-  applyTheme() {
-    const theme = this.settings.theme || 'default';
+  /**
+   * Read the theme select + custom color inputs as a preview object for
+   * applyTheme(). Only well-formed #RRGGBB values are included, so a
+   * half-typed hex falls back to the saved color instead of producing an
+   * invalid CSS custom property.
+   */
+  readThemePreview() {
+    const saved = this.settings?.customTheme || {};
+    const hex = (id, fallback) => {
+      const v = String(document.getElementById(id)?.value || '').trim();
+      return /^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback;
+    };
+    return {
+      theme: document.getElementById('theme')?.value || this.settings?.theme || 'default',
+      customTheme: {
+        accent: hex('customAccentHex', saved.accent),
+        bg: hex('customBgHex', saved.bg),
+        panel: hex('customPanelHex', saved.panel),
+        text: hex('customTextHex', saved.text),
+        border: hex('customBorderHex', saved.border),
+        muted: hex('customMutedHex', saved.muted),
+      },
+    };
+  }
+
+  /**
+   * @param {{theme?: string, customTheme?: Object}} [preview] - form state to
+   *   paint instead of the saved settings (live preview); persisted values
+   *   are used when omitted. The supporter gates apply either way.
+   */
+  applyTheme(preview) {
+    const theme = preview?.theme || this.settings.theme || 'default';
     document.body.className = `theme-${theme}`;
-    
+
     // Remove any previously injected theme link(s)
     document.querySelectorAll('link[data-tsr-theme="1"]').forEach((el) => el.remove());
 
     // Apply custom theme variables (supporter-only)
     if (theme === 'custom') {
       if (this.settings.premiumStatus) {
-        const t = this.settings.customTheme || {};
+        const t = preview?.customTheme || this.settings.customTheme || {};
         this.applyCustomThemeVars(t);
       }
       return;
@@ -661,4 +877,11 @@ class OptionsManager {
 // Initialize options page
 const optionsManager = new OptionsManager();
 optionsManager.init();
+
+// Flush a pending debounced autosave before the page goes away (tab close,
+// navigation, backgrounding on mobile). pagehide also fires on bfcache
+// entry, which is fine — flushing is idempotent.
+window.addEventListener('pagehide', () => {
+  optionsManager.flushPendingAutoSave();
+});
 

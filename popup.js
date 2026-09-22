@@ -2,7 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
-import { isTwitchUrl } from './utils/twitch-url.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 import { formatViewers, formatUptime } from './utils/format.js';
 import { computeBadge } from './utils/badge.js';
 import { moveStream } from './utils/reorder.js';
@@ -29,6 +29,7 @@ class PopupManager {
     this.dragOffset = { x: 0, y: 0 };
     this.categorySuggestTimer = null;
     this.categorySuggestCache = new Map(); // query -> { ts, items }
+    this.messageTimer = null;
   }
 
   async forcePollAndSwap() {
@@ -63,10 +64,10 @@ class PopupManager {
       // If Auto-Swap is enabled but no managed tab is set (e.g., after updates/migrations),
       // immediately bind to a single Twitch tab (or create one) so "enable" always opens a tab.
       if (this.settings?.redirectEnabled && !this.settings?.managedTwitchTabId) {
-        const managedTwitchTabId = await this.pickManagedTwitchTabId();
-        const newSettings = { ...this.settings, managedTwitchTabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        const managedTwitchTabId = await pickManagedTwitchTabId();
+        // Save only this field (see the Auto-Swap toggle handler for why).
+        await storage.saveSettings({ managedTwitchTabId });
+        this.settings = { ...this.settings, managedTwitchTabId };
         // Force a poll/swap so user sees it immediately.
         await this.forcePollAndSwap();
       }
@@ -189,7 +190,12 @@ class PopupManager {
     if (supportBtn) {
       supportBtn.addEventListener('click', async () => {
         try {
-          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, resolve));
+          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, () => {
+            // Read lastError so a failed create doesn't log "Unchecked
+            // runtime.lastError"; opening a support tab is best-effort.
+            void chrome.runtime.lastError;
+            resolve();
+          }));
         } catch {
           // Non-fatal
         }
@@ -268,16 +274,18 @@ class PopupManager {
         // When the user picks a datalist option or blurs after typing, apply it.
         const value = fallbackInput.value.trim();
         if (!value) return;
-        await this.saveFallbackCategory(value);
-        this.showMessage('Category fallback updated', 'success');
+        if (await this.saveFallbackCategory(value)) {
+          this.showMessage('Category fallback updated', 'success');
+        }
       });
       fallbackInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           const value = fallbackInput.value.trim();
           if (!value) return;
-          await this.saveFallbackCategory(value);
-          this.showMessage('Category fallback updated', 'success');
+          if (await this.saveFallbackCategory(value)) {
+            this.showMessage('Category fallback updated', 'success');
+          }
         }
       });
     }
@@ -290,8 +298,9 @@ class PopupManager {
           fallbackInput?.focus();
           return;
         }
-        await this.saveFallbackCategory(value);
-        this.showMessage('Category fallback updated', 'success');
+        if (await this.saveFallbackCategory(value)) {
+          this.showMessage('Category fallback updated', 'success');
+        }
       });
     }
 
@@ -315,15 +324,18 @@ class PopupManager {
         // If enabling, bind auto-swap to exactly one Twitch tab (so other Twitch tabs won't be touched)
         let managedTwitchTabId = this.settings?.managedTwitchTabId ?? null;
         if (checked) {
-          managedTwitchTabId = await this.pickManagedTwitchTabId();
+          managedTwitchTabId = await pickManagedTwitchTabId();
         } else {
           managedTwitchTabId = null;
         }
 
-        // Persist setting
-        const newSettings = { ...this.settings, redirectEnabled: checked, managedTwitchTabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        // Persist only the fields this toggle owns: saveSettings merges over
+        // the stored settings, while saving the whole (possibly stale)
+        // this.settings copy reverts anything written elsewhere (Options
+        // autosave, the background unbinding a closed managed tab) in the
+        // window before this page's storage.onChanged merge lands.
+        await storage.saveSettings({ redirectEnabled: checked, managedTwitchTabId });
+        this.settings = { ...this.settings, redirectEnabled: checked, managedTwitchTabId };
         this.updateAutoSwapUI();
 
         // Force a poll/swap immediately when enabling
@@ -386,8 +398,10 @@ class PopupManager {
   async validateUsername(username) {
     if (!username || username.trim().length === 0) return;
     
-    // Basic validation - alphanumeric, underscores, hyphens
-    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
+    // Basic validation - alphanumeric and underscores. New Twitch accounts
+    // need 4+ characters, but legacy 3-character logins still exist and
+    // stream, so the minimum here is 3.
+    const valid = /^[a-zA-Z0-9_]{3,25}$/.test(username.trim());
     const input = document.getElementById('streamInput');
     
     if (!valid && username.trim().length > 0) {
@@ -406,8 +420,9 @@ class PopupManager {
       return;
     }
 
-    // Validate username format
-    if (!/^[a-zA-Z0-9_]{4,25}$/.test(username)) {
+    // Validate username format (3+ chars: legacy Twitch logins can be shorter
+    // than the 4-character minimum for new accounts)
+    if (!/^[a-zA-Z0-9_]{3,25}$/.test(username)) {
       this.showMessage('Invalid username format', 'error');
       return;
     }
@@ -469,8 +484,9 @@ class PopupManager {
     const streamCount = document.getElementById('streamCount');
     const premiumBadge = document.getElementById('premiumBadge');
 
-    // Update count
-    streamCount.textContent = `${this.streams.length} stream${this.streams.length !== 1 ? 's' : ''}`;
+    // Update count ("channel" to match the rest of the UI copy, e.g. the
+    // "Add channel" button and the empty state)
+    streamCount.textContent = `${this.streams.length} channel${this.streams.length !== 1 ? 's' : ''}`;
     
     // Show premium badge
     if (this.settings?.premiumStatus) {
@@ -499,12 +515,17 @@ class PopupManager {
 
     // Setup drag and drop
     this.setupDragAndDrop();
-    
+
     // Update category fallback widget
     this.updateCategoryFallbackWidget();
 
     // Update auto-swap UI
     this.updateAutoSwapUI();
+
+    // Re-apply the current-stream highlight: the rows above were rebuilt
+    // without their `is-current` class, so without this a bell toggle or
+    // remove/reorder dropped the LIVE marker until the next 30s status poll.
+    this.updateCurrentStream();
   }
 
   updateAutoSwapUI() {
@@ -562,10 +583,10 @@ class PopupManager {
       }
 
       if (tabId == null) {
-        tabId = await this.pickManagedTwitchTabId();
-        const newSettings = { ...this.settings, managedTwitchTabId: tabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        tabId = await pickManagedTwitchTabId();
+        // Save only this field (see the Auto-Swap toggle handler for why).
+        await storage.saveSettings({ managedTwitchTabId: tabId });
+        this.settings = { ...this.settings, managedTwitchTabId: tabId };
         this.updateAutoSwapUI();
       }
 
@@ -582,49 +603,27 @@ class PopupManager {
         });
       });
 
+      // Read lastError in these callbacks: the tab/window can close between
+      // the get() above and these calls, and an unchecked failure logs
+      // "Unchecked runtime.lastError" (same convention as background.js).
       if (tab?.windowId != null) {
-        await new Promise((resolve) => chrome.windows.update(tab.windowId, { focused: true }, resolve));
+        await new Promise((resolve) => chrome.windows.update(tab.windowId, { focused: true }, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        }));
       }
-      await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, resolve));
+      const activated = await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, () => {
+        resolve(!chrome.runtime.lastError);
+      }));
+      if (!activated) {
+        this.showMessage('Failed to jump to managed tab', 'error');
+        return;
+      }
 
       this.showMessage('Jumped to managed tab', 'success');
     } catch (e) {
       console.warn('Failed to jump to managed tab:', e);
       this.showMessage('Failed to jump to managed tab', 'error');
-    }
-  }
-
-  async pickManagedTwitchTabId() {
-    try {
-      // Prefer the current active Twitch tab
-      const activeTabs = await new Promise((resolve) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, resolve);
-      });
-      const activeTab = activeTabs?.[0];
-      if (activeTab?.id && isTwitchUrl(activeTab.url || '')) {
-        return activeTab.id;
-      }
-
-      // Otherwise, pick any existing Twitch tab (first match)
-      const twitchTabs = await new Promise((resolve) => {
-        chrome.tabs.query({ url: ['*://twitch.tv/*', '*://*.twitch.tv/*'] }, resolve);
-      });
-      if (twitchTabs?.length) {
-        return twitchTabs[0].id ?? null;
-      }
-    } catch (e) {
-      console.warn('Failed to pick managed Twitch tab:', e);
-    }
-
-    // No Twitch tab found: create one and manage it.
-    try {
-      const created = await new Promise((resolve) => {
-        chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
-      });
-      return created?.id ?? null;
-    } catch (e) {
-      console.warn('Failed to create Twitch tab:', e);
-      return null;
     }
   }
 
@@ -991,18 +990,27 @@ class PopupManager {
     }
   }
 
+  /**
+   * @returns {boolean} true when a save happened; false when the value was
+   *   already persisted (callers skip their "updated" toast then).
+   */
   async saveFallbackCategory(categoryName) {
     const value = String(categoryName || '').trim();
-    const newSettings = {
-      ...this.settings,
-      fallbackCategory: value
-    };
-    await storage.saveSettings(newSettings);
-    this.settings = newSettings;
+    // Enter in the input saves, then the same value's 'change' event fires on
+    // blur and saved again — and every save restarts background polling. Skip
+    // saves that would not change anything.
+    if (value === String(this.settings?.fallbackCategory || '').trim()) {
+      this.updateCategoryFallbackWidget();
+      return false;
+    }
+    // Save only this field (see the Auto-Swap toggle handler for why).
+    await storage.saveSettings({ fallbackCategory: value });
+    this.settings = { ...this.settings, fallbackCategory: value };
     this.updateCategoryFallbackWidget();
 
     // If fallback is enabled, ensure we force a background poll so the user sees it work quickly.
     await this.forcePollAndSwap();
+    return true;
   }
 
   scheduleCategorySuggestions(query) {
@@ -1070,8 +1078,14 @@ class PopupManager {
     messageDiv.textContent = text;
     messageDiv.className = `status-message show ${type}`;
 
-    setTimeout(() => {
+    // The hide timer from an earlier message must not dismiss this one early
+    // (same fix as showSaveStatus in options.js).
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
+    }
+    this.messageTimer = setTimeout(() => {
       messageDiv.classList.remove('show');
+      this.messageTimer = null;
     }, 3000);
   }
 
@@ -1081,6 +1095,9 @@ class PopupManager {
     }
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
+    }
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
     }
   }
 }

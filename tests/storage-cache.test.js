@@ -106,6 +106,43 @@ describe('StorageManager cache invalidation', () => {
     expect(asObject.runtime.fallback.active).toBe(true);
   });
 
+  it('re-queues failed writes so the next flush retries them', async () => {
+    chrome.storage.local.set.mockRejectedValueOnce(new Error('quota exceeded'));
+
+    await expect(storage.set({ analytics: { switchCount: 5 } }, true)).rejects.toThrow('quota exceeded');
+
+    // The failed write must not be lost: reads still see it via the queue…
+    const analytics = await storage.get('analytics');
+    expect(analytics.switchCount).toBe(5);
+
+    // …and the next flush carries it to storage alongside newer writes.
+    await storage.set({ streams: [{ username: 'a', priority: 1 }] }, true);
+    expect(store.get('analytics')?.switchCount).toBe(5);
+    expect(store.get('streams')).toHaveLength(1);
+  });
+
+  it('does not let a failed flush clobber a newer queued value for the same key', async () => {
+    chrome.storage.local.set.mockRejectedValueOnce(new Error('transient failure'));
+
+    await expect(storage.set({ analytics: { switchCount: 1 } }, true)).rejects.toThrow('transient failure');
+
+    // A newer write to the same key wins over the re-queued failed value.
+    await storage.set({ analytics: { switchCount: 2 } }, true);
+    expect(store.get('analytics')?.switchCount).toBe(2);
+  });
+
+  it('merges a partial settings save over stored settings instead of replacing them', async () => {
+    // Callers (popup, options) pass only the fields they change; fields
+    // written by other contexts in the meantime must survive the merge.
+    await storage.saveSettings({ theme: 'midnight', stayOnRaid: false });
+    await storage.saveSettings({ fallbackCategory: 'Art' });
+
+    const settings = store.get('settings');
+    expect(settings.theme).toBe('midnight');
+    expect(settings.stayOnRaid).toBe(false);
+    expect(settings.fallbackCategory).toBe('Art');
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit

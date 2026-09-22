@@ -109,6 +109,14 @@ class StorageManager {
     try {
       await chrome.storage.local.set(items);
     } catch (error) {
+      // Put the failed items back so the next flush retries them (a debounced
+      // write used to vanish silently here). Values re-queued by set() while
+      // this flush was in flight are newer — don't clobber those.
+      for (const [key, value] of Object.entries(items)) {
+        if (!this.saveQueue.has(key)) {
+          this.saveQueue.set(key, value);
+        }
+      }
       console.error('Storage set error:', error);
       throw error;
     }
@@ -216,8 +224,22 @@ class StorageManager {
   }
 
   /**
-   * Save settings
-   * @param {Object} settings - Settings object
+   * Save settings. Merges over the stored settings, so callers pass only the
+   * fields they own.
+   *
+   * The read before the write is not optional. All settings live in one
+   * storage key, so a write always rewrites the whole object, and the only
+   * thing that keeps a partial save from clobbering another context's fields
+   * is basing it on a fresh read. An in-memory copy is not a substitute: it
+   * is only as current as the last storage.onChanged delivered to that
+   * context, and a write whose event has not arrived yet would be silently
+   * reverted. That is the bug this merge exists to prevent.
+   *
+   * The cost is that a caller which cannot await — the Options page's
+   * pagehide flush — can lose the save entirely if the read never comes
+   * back. Losing a save is the lesser failure; see flushPendingAutoSave().
+   *
+   * @param {Object} settings - the fields to write
    */
   async saveSettings(settings) {
     const current = await this.getSettings();

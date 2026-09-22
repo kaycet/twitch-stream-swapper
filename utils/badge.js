@@ -14,6 +14,24 @@
  * @param {string|null} [args.target] - Username Auto-Swap would watch, if any
  * @returns {{text: string, color: string, title: string}}
  */
+/**
+ * Derive the badge's live count and target from a stored stream list.
+ *
+ * Used when the badge is repainted outside a poll (settings changes, worker
+ * init): the persisted isLive flags from the last poll are still accurate,
+ * while painting a hardcoded 0 blanked the live count until the next poll.
+ *
+ * @param {Array<{username?: string, priority?: number, isLive?: boolean}>} streams
+ * @returns {{liveCount: number, target: string|null}}
+ */
+export function badgeStateFromStreams(streams) {
+  if (!Array.isArray(streams)) return { liveCount: 0, target: null };
+  const live = streams
+    .filter((s) => s?.isLive && s?.username)
+    .sort((a, b) => (a.priority ?? Infinity) - (b.priority ?? Infinity));
+  return { liveCount: live.length, target: live[0]?.username || null };
+}
+
 export function computeBadge({ enabled, liveCount = 0, target = null } = {}) {
   const on = !!enabled;
   const count = Number(liveCount) || 0;

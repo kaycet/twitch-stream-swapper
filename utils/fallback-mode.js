@@ -45,5 +45,39 @@ export function shouldRerollCategoryFallback({
   return true;
 }
 
+/** Fields of the persisted fallback runtime that carry state (updatedAt is bookkeeping). */
+const FALLBACK_STATE_FIELDS = ['active', 'category', 'username', 'reason'];
+
+/**
+ * Apply a partial fallback-state patch and report whether any state field
+ * actually changed. The background worker persists its fallback runtime on
+ * every poll "to keep it in sync", but in the steady state (someone from the
+ * list is live, or fallback is parked on a channel) the patch is a no-op and
+ * only the updatedAt timestamp would move — and that write fires
+ * storage.onChanged in every context (cache flushes, a content-script
+ * refresh in every Twitch tab) once per poll, forever. `changed` lets the
+ * caller skip those writes.
+ *
+ * Patch semantics match setFallbackRuntime: `active` only applies when it is
+ * a boolean; the other fields only when not undefined (null is meaningful).
+ *
+ * @param {Object|null|undefined} fallback - current fallback runtime state
+ * @param {{active?: boolean, category?: string|null, username?: string|null, reason?: string|null}} [patch]
+ * @returns {{fallback: Object, changed: boolean}} New state object (without
+ *   updatedAt applied) and whether any state field differs.
+ */
+export function applyFallbackPatch(fallback, { active, category, username, reason } = {}) {
+  const current = fallback || {};
+  const next = {
+    ...current,
+    ...(typeof active === 'boolean' ? { active } : {}),
+    ...(category !== undefined ? { category } : {}),
+    ...(username !== undefined ? { username } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+  };
+  const changed = FALLBACK_STATE_FIELDS.some((key) => next[key] !== current[key]);
+  return { fallback: next, changed };
+}
+
 
 

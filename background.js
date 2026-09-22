@@ -9,10 +9,13 @@ import twitchAPI from './utils/twitch-api.js';
 import notificationManager from './utils/notifications.js';
 import { isQuietHours } from './utils/quiet-hours.js';
 import { retryDelayMs } from './utils/poll-errors.js';
-import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
+import { shouldRerollCategoryFallback, applyFallbackPatch } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
-import { computeBadge } from './utils/badge.js';
+import { computeBadge, badgeStateFromStreams } from './utils/badge.js';
+import { viewingCreditSeconds } from './utils/analytics.js';
+import { mergeStatusUpdates, statusSnapshot } from './utils/stream-sync.js';
 import { memoizeAsync } from './utils/memoize-async.js';
+import { serializeAsync } from './utils/serialize-async.js';
 import {
   NOT_NOW_BUTTON,
   isAutoswapNotificationId,
@@ -32,6 +35,13 @@ class BackgroundWorker {
     // worker lifetime, but a rejected init is forgotten so the next event
     // retries instead of inheriting a permanently failed promise.
     this.init = memoizeAsync(() => this._init());
+    // Serialized: a popup-forced poll bypasses the 5s throttle by design, so
+    // it could otherwise interleave with an alarm poll mid-await — both
+    // holding the same pre-save wasLive snapshot, both firing "went live"
+    // notifications and switch-prompt cards for the same stream. Queued
+    // callers still hit the throttle when they run, so only forced polls
+    // (lastPollTime = 0) actually re-poll.
+    this.pollStreams = serializeAsync(() => this._pollStreams());
     this.runtime = {
       fallback: {
         active: false,
@@ -79,7 +89,7 @@ class BackgroundWorker {
     this.startPolling();
 
     // Set initial badge state
-    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
+    await this.refreshBadge();
   }
 
   async forcePollNow() {
@@ -116,7 +126,21 @@ class BackgroundWorker {
     this.startPolling();
 
     // Update badge immediately when user toggles Auto-Swap in the popup/options.
-    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
+    // Recompute the live count from storage instead of painting 0: any
+    // settings change (theme, raid toggle, …) used to blank the count until
+    // the next poll, up to a full check interval later.
+    await this.refreshBadge();
+  }
+
+  /** Repaint the badge from the persisted stream statuses of the last poll. */
+  async refreshBadge() {
+    let state = { liveCount: 0, target: null };
+    try {
+      state = badgeStateFromStreams(await storage.getStreams());
+    } catch {
+      // Storage read failed; still paint the enabled state.
+    }
+    this.updateBadge({ enabled: !!this.settings?.redirectEnabled, ...state });
   }
 
   updateBadge({ enabled, liveCount = 0, target } = {}) {
@@ -178,7 +202,7 @@ class BackgroundWorker {
     chrome.alarms.create('tsr-poll-retry', { delayInMinutes: Math.max(1, delayMs / 60000) });
   }
 
-  async pollStreams() {
+  async _pollStreams() {
     // Ensure modules are loaded
     if (!storage || !twitchAPI) {
       console.warn('Modules not loaded yet, skipping poll');
@@ -205,7 +229,7 @@ class BackgroundWorker {
           const newSettings = { ...this.settings, redirectEnabled: false, managedTwitchTabId: null };
           await storage.saveSettings(newSettings);
           this.settings = newSettings;
-          this.updateBadge({ enabled: false, liveCount: 0 });
+          await this.refreshBadge();
           return;
         }
       }
@@ -213,8 +237,22 @@ class BackgroundWorker {
       const streams = await storage.getStreams();
       if (streams.length === 0) {
         this.updateBadge({ enabled: !!this.settings?.redirectEnabled, liveCount: 0 });
+        // An empty list still counts as "no streams live": category fallback
+        // must run here too, or enabling Auto-Swap + a fallback category with
+        // no streams configured silently does nothing.
+        if (this.settings?.redirectEnabled && this.settings?.fallbackCategory) {
+          await this.handleCategoryFallback({ force: false, reason: 'auto' });
+        }
         return;
       }
+
+      // Snapshot the statuses as they stand in storage BEFORE the loop below
+      // writes this poll's values onto these very stream objects. The
+      // post-poll re-read can hand back the same cached array, and comparing
+      // it to itself reports "nothing changed" for a stream that just went
+      // live — the save is skipped, storage keeps wasLive false, and every
+      // service-worker restart re-fires the "went live" notification.
+      const priorStatuses = statusSnapshot(streams);
 
       // Sort by priority
       const prioritized = [...streams].sort((a, b) => a.priority - b.priority);
@@ -282,16 +320,14 @@ class BackgroundWorker {
 
       // Save updated stream statuses WITHOUT overwriting list edits that might have happened mid-poll
       // (e.g., user adds/reorders streams while we're awaiting the network call).
+      // Skip the save when nothing changed (e.g. everyone offline before and
+      // after): each write fires storage.onChanged in every context — cache
+      // flushes plus a content-script refresh in every open Twitch tab —
+      // once per poll, forever.
       const latestStreams = await storage.getStreams();
-      for (const s of latestStreams) {
-        const update = statusUpdatesByUsername.get(s.username);
-        if (update) {
-          s.isLive = update.isLive;
-          s.streamData = update.streamData;
-          s.wasLive = update.wasLive;
-        }
+      if (mergeStatusUpdates(latestStreams, statusUpdatesByUsername, priorStatuses)) {
+        await storage.saveStreams(latestStreams);
       }
-      await storage.saveStreams(latestStreams);
 
       // Handle auto-switching
       if (this.settings?.redirectEnabled) {
@@ -585,16 +621,22 @@ class BackgroundWorker {
   }
 
   async setFallbackRuntime({ active, category, username, reason } = {}) {
+    const { fallback, changed } = applyFallbackPatch(this.runtime.fallback, {
+      active,
+      category,
+      username,
+      reason,
+    });
+    // No state change means nothing to persist: in the steady state (a list
+    // stream is live, or fallback is parked on a channel) this runs every
+    // poll, and writing just a fresh updatedAt fired storage.onChanged in
+    // every context — cache flushes plus a content-script refresh in every
+    // open Twitch tab — once per poll, forever. (updatedAt is never read.)
+    if (!changed) return;
+
     const next = {
       ...this.runtime,
-      fallback: {
-        ...this.runtime.fallback,
-        ...(typeof active === 'boolean' ? { active } : {}),
-        ...(category !== undefined ? { category } : {}),
-        ...(username !== undefined ? { username } : {}),
-        ...(reason !== undefined ? { reason } : {}),
-        updatedAt: Date.now(),
-      },
+      fallback: { ...fallback, updatedAt: Date.now() },
     };
     this.runtime = next;
     await storage.set({ runtime: next }, true);
@@ -604,16 +646,24 @@ class BackgroundWorker {
     if (!liveStream) return;
 
     const analytics = await storage.getAnalytics();
-    
-    // Update viewing time
-    const username = liveStream.username;
-    if (!analytics.viewingTime[username]) {
-      analytics.viewingTime[username] = 0;
+    const now = Date.now();
+
+    // Credit real elapsed time since the previous credit, capped at one
+    // poll interval — not a flat interval per poll. Forced polls (every
+    // popup add/remove/reorder triggers one) used to add a full interval
+    // each, inflating "viewing time" by minutes per click.
+    const credit = viewingCreditSeconds({
+      nowMs: now,
+      lastUpdateMs: analytics.lastViewingUpdate,
+      checkIntervalMs: this.settings?.checkInterval || 60000,
+    });
+    analytics.lastViewingUpdate = now;
+
+    if (credit > 0) {
+      const username = liveStream.username;
+      analytics.viewingTime = analytics.viewingTime || {};
+      analytics.viewingTime[username] = (analytics.viewingTime[username] || 0) + credit;
     }
-    
-    // Increment viewing time (in seconds, poll interval)
-    const pollIntervalSeconds = (this.settings?.checkInterval || 60000) / 1000;
-    analytics.viewingTime[username] += pollIntervalSeconds;
 
     await storage.saveAnalytics(analytics);
   }
@@ -709,7 +759,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       const newSettings = { ...worker.settings, redirectEnabled: false, managedTwitchTabId: null };
       await storage.saveSettings(newSettings);
       worker.settings = newSettings;
-      worker.updateBadge({ enabled: false, liveCount: 0 });
+      await worker.refreshBadge();
     })
     .catch((e) => console.warn('Failed to disable Auto-Swap on tab close:', e));
 });

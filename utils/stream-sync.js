@@ -58,3 +58,93 @@ export function overlayStreamStatuses(localStreams, storageStreams) {
 
   return { streams, changed };
 }
+
+function sameStatusValue(a, b) {
+  if (Object.is(a, b)) return true;
+  // streamData is a fresh object every poll; compare by content. Helix
+  // serializes fields in a stable order, and a spurious mismatch only costs
+  // one redundant write.
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Merge the background worker's per-poll status updates into the freshly
+ * re-read streams list (mutating it, mirroring the poll loop) and report
+ * whether anything actually changed.
+ *
+ * The worker used to save the list unconditionally after every poll, even
+ * when every stream was offline before and after — and every such write
+ * fires storage.onChanged in all contexts: each StorageManager drops its
+ * cache and the content script re-renders (with a service-worker message
+ * round-trip) in every open Twitch tab. With the default 1-minute interval
+ * that churn ran forever; `changed` false means the save can be skipped.
+ *
+ * `priorByUsername` exists because the worker's two reads can be the same
+ * object. StorageManager.get() caches and hands back the very array it
+ * cached, and the poll loop writes this poll's statuses straight onto those
+ * stream objects — so the post-poll re-read often aliases them, every field
+ * compares equal to itself, and a stream that just went live reports
+ * "nothing changed". A snapshot taken before the loop is immune to that.
+ * The stored values are still compared as well, so a list genuinely re-read
+ * from storage (the popup edited it mid-poll) is not missed either.
+ *
+ * @param {Array<Object>} streams - list just re-read from storage (mutated)
+ * @param {Map<string, Object>} updatesByUsername - username -> status fields
+ * @param {Map<string, Object>} [priorByUsername] - statusSnapshot() taken
+ *   before the poll loop mutated anything
+ * @returns {boolean} true when any status field on any stream changed
+ */
+export function mergeStatusUpdates(streams, updatesByUsername, priorByUsername = null) {
+  if (!Array.isArray(streams) || !(updatesByUsername instanceof Map)) return false;
+
+  let changed = false;
+  for (const stream of streams) {
+    const update = stream?.username != null ? updatesByUsername.get(stream.username) : undefined;
+    if (!update) continue;
+    const prior = priorByUsername instanceof Map ? priorByUsername.get(stream.username) : undefined;
+    for (const field of STATUS_FIELDS) {
+      if (!(field in update)) continue;
+      if (!sameStatusValue(stream[field], update[field])) changed = true;
+      if (prior && !sameStatusValue(prior[field], update[field])) changed = true;
+      stream[field] = update[field];
+    }
+  }
+  return changed;
+}
+
+/**
+ * Snapshot a stream list's status fields before anything mutates them.
+ * Feeds mergeStatusUpdates()'s `priorByUsername`.
+ *
+ * `streamData` is copied one level deep, not merely referenced: a reference
+ * would be defeated by any future code that edited the stored object in
+ * place instead of replacing it, and the whole point of this snapshot is to
+ * hold the pre-poll values. Nested objects are still shared — Helix payloads
+ * are flat, and the poll replaces `streamData` wholesale today.
+ *
+ * @param {Array<Object>} streams
+ * @returns {Map<string, Object>} username -> {isLive, wasLive, streamData}
+ */
+export function statusSnapshot(streams) {
+  const snapshot = new Map();
+  if (!Array.isArray(streams)) return snapshot;
+  for (const stream of streams) {
+    if (stream?.username == null) continue;
+    const entry = {};
+    for (const field of STATUS_FIELDS) {
+      const value = stream[field];
+      entry[field] = (value && typeof value === 'object' && !Array.isArray(value))
+        ? { ...value }
+        : value;
+    }
+    snapshot.set(stream.username, entry);
+  }
+  return snapshot;
+}

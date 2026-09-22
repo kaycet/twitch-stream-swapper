@@ -63,4 +63,14 @@ describe('ErrorMessageManager.getErrorMessage', () => {
     expect(() => get(undefined)).not.toThrow();
     expect(get('plain string error').type).toBe('error');
   });
+
+  // Regression: non-string inputs used to reach errorMessage.toLowerCase()
+  // and throw inside the caller's catch block, masking the original error.
+  it('degrades non-string inputs to the generic copy instead of throwing', () => {
+    expect(get({}).message).toBe('An unknown error occurred');
+    expect(get(42).message).toBe('An unknown error occurred');
+    expect(get({ message: 42 }).message).toBe('An unknown error occurred');
+    expect(get(new Error('')).message).toBe('An unknown error occurred');
+    expect(get({}).type).toBe('error');
+  });
 });

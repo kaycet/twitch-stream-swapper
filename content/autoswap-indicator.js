@@ -94,6 +94,27 @@ function ensureIndicator() {
   return el;
 }
 
+/** Hide the pill if it was ever injected; never injects anything itself. */
+function hideIndicator() {
+  const el = document.getElementById(INDICATOR_ID);
+  if (el) el.style.display = 'none';
+}
+
+// A tab's id never changes for the lifetime of the page, so resolve it once.
+// Asking the service worker on every storage change woke it from every open
+// Twitch tab on every poll cycle.
+let cachedTabId = null;
+async function getMyTabId() {
+  if (cachedTabId != null) return cachedTabId;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'TSR_GET_TAB_ID' });
+    if (typeof resp?.tabId === 'number') cachedTabId = resp.tabId;
+  } catch {
+    // Service worker may still be starting; retry on the next refresh.
+  }
+  return cachedTabId;
+}
+
 function pickTargetStream(streams) {
   if (!Array.isArray(streams) || streams.length === 0) return null;
   const sorted = [...streams].sort((a, b) => (a.priority ?? 9999) - (b.priority ?? 9999));
@@ -102,30 +123,31 @@ function pickTargetStream(streams) {
 }
 
 async function refresh() {
-  const el = ensureIndicator();
-  const targetEl = document.getElementById('tsr-autoswap-target');
-  const titleEl = el.querySelector('.title');
-  const rerollBtn = document.getElementById('tsr-fallback-reroll');
-
   const { settings, streams, runtime } = await chrome.storage.local.get(['settings', 'streams', 'runtime']);
   const enabled = !!settings?.redirectEnabled;
   const managedTabId = settings?.managedTwitchTabId ?? null;
   const fallbackActive = !!runtime?.fallback?.active;
   const fallbackCategory = runtime?.fallback?.category || settings?.fallbackCategory || '';
 
-  // Only show on the managed tab (so other Twitch tabs stay "normal")
-  let myTabId = null;
-  try {
-    const resp = await chrome.runtime.sendMessage({ type: 'TSR_GET_TAB_ID' });
-    myTabId = resp?.tabId ?? null;
-  } catch {
-    myTabId = null;
-  }
-
-  if (!enabled || !managedTabId || !myTabId || managedTabId !== myTabId) {
-    el.style.display = 'none';
+  // Decide visibility BEFORE touching the page: with Auto-Swap off (the
+  // default), every Twitch tab used to get the pill's <style> and <div>
+  // injected just to immediately hide them.
+  if (!enabled || !managedTabId) {
+    hideIndicator();
     return;
   }
+
+  // Only show on the managed tab (so other Twitch tabs stay "normal")
+  const myTabId = await getMyTabId();
+  if (!myTabId || managedTabId !== myTabId) {
+    hideIndicator();
+    return;
+  }
+
+  const el = ensureIndicator();
+  const targetEl = document.getElementById('tsr-autoswap-target');
+  const titleEl = el.querySelector('.title');
+  const rerollBtn = document.getElementById('tsr-fallback-reroll');
 
   // Mode styling + fallback reroll button
   if (fallbackActive) {
