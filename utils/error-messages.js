@@ -57,6 +57,19 @@ class ErrorMessageManager {
       };
     }
 
+    // Advanced Client ID validation (Options page). This is the user's own
+    // input failing local validation, not an auth outage — the message is a
+    // plain string with no error code. It must win over the auth branch
+    // below, which also matches "client id" and used to swallow it,
+    // misreporting a typo'd Client ID as a token-broker failure.
+    if (!kind && context === 'saveSettings' && errorString.includes('client id')) {
+      return {
+        message: 'Invalid Twitch Client ID (advanced setting).',
+        type: 'error',
+        action: 'If you changed the Client ID manually, verify it matches your Twitch app. Otherwise, clear the field and Save to use the built-in config.'
+      };
+    }
+
     // Authentication errors (production uses token broker + app access token)
     // Match auth-specific "invalid ..." phrases only. A bare includes('invalid')
     // used to swallow unrelated errors like "Invalid color for accent (use #RRGGBB)",
@@ -140,16 +153,6 @@ class ErrorMessageManager {
           message: 'Free tier limited to 10 streams. Enable Supporter Features (honor system) for unlimited streams.',
           type: 'info',
           action: 'Go to Settings → Supporter Features.'
-        };
-      }
-    }
-
-    if (context === 'saveSettings') {
-      if (errorString.includes('client id')) {
-        return {
-          message: 'Invalid Twitch Client ID (advanced setting).',
-          type: 'error',
-          action: 'If you changed the Client ID manually, verify it matches your Twitch app. Otherwise, clear the field and Save to use the built-in config.'
         };
       }
     }
