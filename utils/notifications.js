@@ -101,17 +101,6 @@ if (globalThis.chrome?.notifications) {
 
 class NotificationManager {
   /**
-   * Request notification permission
-   * @returns {Promise<boolean>}
-   */
-  async requestPermission() {
-    if (chrome.notifications) {
-      return true; // Already have permission via manifest
-    }
-    return false;
-  }
-
-  /**
    * Show notification when stream goes live
    * @param {string} username - Streamer username
    * @param {string} title - Stream title
@@ -164,20 +153,6 @@ class NotificationManager {
       // per-notification listeners means nothing to clean up either.
     } catch (error) {
       console.error('Error showing notification:', error);
-    }
-  }
-
-  /**
-   * Clear all notifications
-   */
-  async clearAll() {
-    try {
-      const notifications = await chrome.notifications.getAll();
-      Object.keys(notifications).forEach(id => {
-        chrome.notifications.clear(id);
-      });
-    } catch (error) {
-      console.error('Error clearing notifications:', error);
     }
   }
 }

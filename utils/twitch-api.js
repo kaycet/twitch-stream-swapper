@@ -12,8 +12,6 @@ class TwitchAPI {
     this.cache = new Map();
     this.cacheTTL = 30000; // 30 seconds
     this.MAX_CACHE_ENTRIES = 200;
-    this.rateLimitQueue = [];
-    this.rateLimitDelay = 0;
     this.requestCount = 0;
     this.requestWindow = Date.now();
     this.MAX_REQUESTS_PER_MINUTE = 800;
@@ -325,16 +323,6 @@ class TwitchAPI {
   }
 
   /**
-   * Check if a single stream is live
-   * @param {string} username - Username to check
-   * @returns {Promise<Object|null>} - Stream data or null if offline
-   */
-  async checkStreamStatus(username) {
-    const results = await this.checkStreamsStatus([username]);
-    return results[username] || null;
-  }
-
-  /**
    * Get category/game ID by name
    * @param {string} categoryName - Category name
    * @returns {Promise<string|null>} - Game ID or null
@@ -438,16 +426,6 @@ class TwitchAPI {
    */
   clearCache() {
     this.cache.clear();
-  }
-
-  /**
-   * Get cache stats (for debugging)
-   */
-  getCacheStats() {
-    return {
-      size: this.cache.size,
-      requestsThisMinute: this.requestCount
-    };
   }
 }
 
