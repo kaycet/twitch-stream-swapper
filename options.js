@@ -376,7 +376,14 @@ class OptionsManager {
           start: document.getElementById('quietHoursStart').value || '22:00',
           end: document.getElementById('quietHoursEnd').value || '08:00',
         },
-        theme: document.getElementById('theme').value,
+        // 'custom' deliberately does not autosave: it must go through
+        // "Apply Custom Theme" (validated colors + confirm). While that
+        // choice is still pending, an unrelated autosave must keep the last
+        // applied theme instead of reading the unconfirmed 'custom' from the
+        // DOM and painting stale customTheme colors everywhere.
+        theme: this.customThemeDirty && document.getElementById('theme').value === 'custom'
+          ? (this.settings?.theme || 'default')
+          : document.getElementById('theme').value,
       };
 
       // Custom theme colors are validated and persisted separately via
