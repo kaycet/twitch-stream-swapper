@@ -250,6 +250,10 @@ class PopupManager {
         // enabling: if empty, keep focus on input
         const current = (fallbackInput?.value || '').trim();
         if (!current) {
+          // Nothing was saved, so don't leave the checkbox looking enabled —
+          // closing the popup here made the UI claim a fallback that
+          // settings.fallbackCategory ('') doesn't have.
+          e.target.checked = false;
           this.showMessage('Type a category name', 'info');
           fallbackInput?.focus();
         } else {
@@ -475,7 +479,7 @@ class PopupManager {
     const premiumBadge = document.getElementById('premiumBadge');
 
     // Update count
-    streamCount.textContent = `${this.streams.length} stream${this.streams.length !== 1 ? 's' : ''}`;
+    streamCount.textContent = `${this.streams.length} channel${this.streams.length !== 1 ? 's' : ''}`;
     
     // Show premium badge
     if (this.settings?.premiumStatus) {
