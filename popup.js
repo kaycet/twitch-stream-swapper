@@ -250,6 +250,10 @@ class PopupManager {
         // enabling: if empty, keep focus on input
         const current = (fallbackInput?.value || '').trim();
         if (!current) {
+          // Nothing was saved, so don't leave the checkbox looking enabled —
+          // closing the popup here made the UI claim a fallback that
+          // settings.fallbackCategory ('') doesn't have.
+          e.target.checked = false;
           this.showMessage('Type a category name', 'info');
           fallbackInput?.focus();
         } else {
@@ -348,10 +352,15 @@ class PopupManager {
     }
 
     // Keep popup UI in sync if settings change elsewhere
-    chrome.storage.onChanged.addListener((changes, area) => {
+    chrome.storage.onChanged.addListener(async (changes, area) => {
       if (area !== 'local') return;
       if (changes.settings?.newValue) {
-        this.settings = { ...this.settings, ...changes.settings.newValue };
+        // Re-read through storage.getSettings() instead of merging the raw
+        // stored object: stored clientId is '' when the Advanced override is
+        // off, and only getSettings() resolves it to the built-in ID. Merging
+        // the raw value blanked this.settings.clientId and the periodic
+        // status checks (checkStreamStatuses) stopped until popup reopen.
+        this.settings = await storage.getSettings();
         this.updateAutoSwapUI();
         this.updateCategoryFallbackWidget();
         this.applyTheme();
@@ -470,7 +479,7 @@ class PopupManager {
     const premiumBadge = document.getElementById('premiumBadge');
 
     // Update count
-    streamCount.textContent = `${this.streams.length} stream${this.streams.length !== 1 ? 's' : ''}`;
+    streamCount.textContent = `${this.streams.length} channel${this.streams.length !== 1 ? 's' : ''}`;
     
     // Show premium badge
     if (this.settings?.premiumStatus) {
