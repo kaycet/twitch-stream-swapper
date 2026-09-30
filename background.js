@@ -343,6 +343,14 @@ class BackgroundWorker {
   }
 
   async promptBeforeSwitch(stream) {
+    // Quiet hours promise "No notifications inside this window" (Options), and
+    // the prompt is an OS notification like any other. Don't switch silently
+    // either — the user explicitly asked to confirm switches — so the switch
+    // simply waits: the next poll after the window ends prompts as usual.
+    if (isQuietHours(this.settings?.quietHours)) {
+      return;
+    }
+
     // Everything this decision needs lives in storage (not on `this`) so it
     // survives MV3 service-worker suspension between polls and clicks.
     const { pendingSwitch, switchSnoozeUntil } = await chrome.storage.local.get([
@@ -661,8 +669,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (!changes.settings?.newValue) return;
+  // Re-read through storage.getSettings() instead of using the raw stored
+  // object: stored clientId is '' when the Advanced override is off, and only
+  // getSettings() resolves it to the built-in ID. Feeding the raw value into
+  // handleSettingsChange left settings.clientId empty, so startPolling()
+  // bailed out and auto-swap silently died until the worker restarted.
+  // (storage's own onChanged listener registers first and clears its cache,
+  // so this read is fresh.)
   worker.init()
-    .then(() => worker.handleSettingsChange(changes.settings.newValue))
+    .then(() => storage.getSettings())
+    .then((settings) => worker.handleSettingsChange(settings))
     .catch((e) => console.warn('Failed to apply settings change:', e));
 });
 

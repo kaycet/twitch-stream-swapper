@@ -348,10 +348,15 @@ class PopupManager {
     }
 
     // Keep popup UI in sync if settings change elsewhere
-    chrome.storage.onChanged.addListener((changes, area) => {
+    chrome.storage.onChanged.addListener(async (changes, area) => {
       if (area !== 'local') return;
       if (changes.settings?.newValue) {
-        this.settings = { ...this.settings, ...changes.settings.newValue };
+        // Re-read through storage.getSettings() instead of merging the raw
+        // stored object: stored clientId is '' when the Advanced override is
+        // off, and only getSettings() resolves it to the built-in ID. Merging
+        // the raw value blanked this.settings.clientId and the periodic
+        // status checks (checkStreamStatuses) stopped until popup reopen.
+        this.settings = await storage.getSettings();
         this.updateAutoSwapUI();
         this.updateCategoryFallbackWidget();
         this.applyTheme();
