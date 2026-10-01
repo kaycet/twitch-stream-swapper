@@ -30,7 +30,7 @@
 
 ## Install
 
-- **Chrome Web Store**: coming soon. Publishing checklist: `docs/CHROME_STORE.md`.
+- **Chrome Web Store**: coming soon.
 - **From source (developer mode)**:
 
 ```bash
