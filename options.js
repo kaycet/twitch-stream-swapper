@@ -2,6 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -145,9 +146,19 @@ class OptionsManager {
   }
 
   setupStorageListeners() {
-    // Keep analytics UI live-updated while the Options page is open.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+
+      // The popup and background worker also write settings (Auto-Swap
+      // toggle, managed tab binding/unbinding, category fallback). Merge
+      // them in and refresh the matching controls, or the next autosave
+      // here writes the stale checkbox state back over their changes.
+      if (changes.settings?.newValue) {
+        this.settings = { ...this.settings, ...changes.settings.newValue };
+        this.syncExternallyWritableControls();
+      }
+
+      // Keep analytics UI live-updated while the Options page is open.
       if (!this.settings?.premiumStatus) return;
       if (!changes.analytics) return;
 
@@ -156,6 +167,26 @@ class OptionsManager {
       this._analyticsRefreshTimer = setTimeout(() => {
         this.loadAnalytics();
       }, 200);
+    });
+  }
+
+  /**
+   * Re-sync the controls whose settings other contexts write too. Skips the
+   * control the user is currently focused on so we never yank an in-progress
+   * edit out from under them.
+   */
+  syncExternallyWritableControls() {
+    const sync = (id, apply) => {
+      const el = document.getElementById(id);
+      if (!el || el === document.activeElement) return;
+      apply(el);
+    };
+    sync('redirectEnabled', (el) => { el.checked = !!this.settings.redirectEnabled; });
+    sync('fallbackEnabled', (el) => { el.checked = !!this.settings.fallbackCategory; });
+    sync('fallbackCategory', (el) => {
+      // Keep the last category text visible when fallback was disabled
+      // elsewhere, so re-enabling here doesn't start from a blank field.
+      if (this.settings.fallbackCategory) el.value = this.settings.fallbackCategory;
     });
   }
 
@@ -363,9 +394,12 @@ class OptionsManager {
       const allowedIntervals = new Set([60000, 120000, 300000, 600000]);
       const checkInterval = parseInt(document.getElementById('checkInterval').value, 10) || 60000;
 
+      const redirectEnabled = document.getElementById('redirectEnabled').checked;
+      const wasEnabled = !!this.settings.redirectEnabled;
+
       const newSettings = {
         checkInterval: allowedIntervals.has(checkInterval) ? checkInterval : 60000,
-        redirectEnabled: document.getElementById('redirectEnabled').checked,
+        redirectEnabled,
         promptBeforeSwitch: document.getElementById('promptBeforeSwitch').checked,
         fallbackCategory: document.getElementById('fallbackEnabled').checked 
           ? document.getElementById('fallbackCategory').value.trim() 
@@ -388,8 +422,31 @@ class OptionsManager {
         newSettings.fallbackCategory = newSettings.fallbackCategory.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 50);
       }
 
+      // Auto-Swap only works with a bound tab: every switch path in the
+      // background worker is gated on managedTwitchTabId. The popup binds
+      // one when its toggle is flipped; without this, enabling from Options
+      // saved redirectEnabled=true with no tab and silently did nothing
+      // until the popup happened to be opened. Mirror the popup: bind on
+      // enable (active Twitch tab, else any, else open one), unbind on
+      // disable.
+      if (redirectEnabled && this.settings.managedTwitchTabId == null) {
+        newSettings.managedTwitchTabId = await pickManagedTwitchTabId();
+      } else if (!redirectEnabled) {
+        newSettings.managedTwitchTabId = null;
+      }
+
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
+
+      // Just enabled: force a poll past the 5s throttle so the first swap
+      // happens now, not on the next alarm (popup does the same).
+      if (redirectEnabled && !wasEnabled) {
+        try {
+          await chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' });
+        } catch (err) {
+          console.warn('Failed to trigger force poll:', err);
+        }
+      }
 
       this.showSaveStatus('Saved', 'success');
       this.applyTheme();
@@ -588,6 +645,10 @@ class OptionsManager {
       if (this.settings.premiumStatus) {
         const t = this.settings.customTheme || {};
         this.applyCustomThemeVars(t);
+      } else {
+        // Supporter features off: previously-applied custom vars must not
+        // linger on the page.
+        this.clearCustomThemeVars();
       }
       return;
     }
