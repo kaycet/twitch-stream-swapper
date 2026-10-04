@@ -2,6 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -145,9 +146,21 @@ class OptionsManager {
   }
 
   setupStorageListeners() {
-    // Keep analytics UI live-updated while the Options page is open.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+
+      // Keep the general form in sync with settings changed elsewhere (the
+      // popup, or the background worker auto-disabling Auto-Swap when the
+      // managed tab closes). saveGeneralSettings() writes every general
+      // field from the DOM, so stale controls here silently clobbered those
+      // changes — e.g. tweaking quiet hours used to turn Auto-Swap back off
+      // right after the popup enabled it.
+      if (changes.settings?.newValue) {
+        this.settings = { ...this.settings, ...changes.settings.newValue };
+        this.syncGeneralControls();
+      }
+
+      // Keep analytics UI live-updated while the Options page is open.
       if (!this.settings?.premiumStatus) return;
       if (!changes.analytics) return;
 
@@ -157,6 +170,43 @@ class OptionsManager {
         this.loadAnalytics();
       }, 200);
     });
+  }
+
+  /**
+   * Refresh the general (auto-saved) controls from this.settings. Touches
+   * nothing in the Advanced or Custom Theme sections — those are dirty-state
+   * editors with their own Apply buttons — and skips the control the user is
+   * currently editing and any pending autosave, so their input wins.
+   */
+  syncGeneralControls() {
+    // The user's in-flight edit (autosave still debouncing) beats a
+    // concurrent external write; our own save's onChanged echo also lands
+    // here and must not fight the next edit.
+    if (this.autoSaveTimer) return;
+
+    const setControl = (id, apply) => {
+      const el = document.getElementById(id);
+      if (!el || el === document.activeElement) return;
+      apply(el);
+    };
+
+    const allowedIntervals = new Set([60000, 120000, 300000, 600000]);
+    const interval = allowedIntervals.has(this.settings.checkInterval) ? this.settings.checkInterval : 60000;
+    setControl('checkInterval', (el) => { el.value = String(interval); });
+    setControl('redirectEnabled', (el) => { el.checked = !!this.settings.redirectEnabled; });
+    setControl('promptBeforeSwitch', (el) => { el.checked = !!this.settings.promptBeforeSwitch; });
+    setControl('fallbackEnabled', (el) => { el.checked = !!this.settings.fallbackCategory; });
+    setControl('fallbackCategory', (el) => { el.value = this.settings.fallbackCategory || ''; });
+    setControl('notificationsEnabled', (el) => { el.checked = !!this.settings.notificationsEnabled; });
+    setControl('quietHoursEnabled', (el) => { el.checked = !!this.settings.quietHours?.enabled; });
+    setControl('quietHoursStart', (el) => { el.value = this.settings.quietHours?.start || '22:00'; });
+    setControl('quietHoursEnd', (el) => { el.value = this.settings.quietHours?.end || '08:00'; });
+    setControl('theme', (el) => { el.value = this.settings.theme || 'default'; });
+    setControl('premiumStatus', (el) => { el.checked = !!this.settings.premiumStatus; });
+
+    this.updatePremiumFeatures();
+    this.updateCustomThemeVisibility();
+    this.applyTheme();
   }
 
   setupCustomThemeListeners() {
@@ -224,6 +274,10 @@ class OptionsManager {
       clearTimeout(this.autoSaveTimer);
     }
     this.autoSaveTimer = setTimeout(() => {
+      // Null it out so syncGeneralControls() can tell "autosave pending"
+      // from "autosave already fired" — a stale id here would block syncing
+      // external settings changes forever after the first save.
+      this.autoSaveTimer = null;
       this.saveGeneralSettings();
     }, this.AUTO_SAVE_DELAY_MS);
   }
@@ -363,9 +417,10 @@ class OptionsManager {
       const allowedIntervals = new Set([60000, 120000, 300000, 600000]);
       const checkInterval = parseInt(document.getElementById('checkInterval').value, 10) || 60000;
 
+      const redirectEnabled = document.getElementById('redirectEnabled').checked;
       const newSettings = {
         checkInterval: allowedIntervals.has(checkInterval) ? checkInterval : 60000,
-        redirectEnabled: document.getElementById('redirectEnabled').checked,
+        redirectEnabled,
         promptBeforeSwitch: document.getElementById('promptBeforeSwitch').checked,
         fallbackCategory: document.getElementById('fallbackEnabled').checked 
           ? document.getElementById('fallbackCategory').value.trim() 
@@ -382,6 +437,19 @@ class OptionsManager {
       // Custom theme colors are validated and persisted separately via
       // applyCustomThemeSettings(); general autosave must not touch them.
 
+      // Auto-Swap only acts on its one managed tab: without a bound
+      // managedTwitchTabId the background worker refuses to switch or run
+      // category fallback, so enabling from this page used to be a silent
+      // no-op until the popup happened to bind a tab. Bind here too (the
+      // popup does the same on enable), and unbind on disable so a later
+      // enable re-picks a tab that still exists.
+      const wasEnabled = !!this.settings?.redirectEnabled;
+      if (redirectEnabled && !this.settings?.managedTwitchTabId) {
+        newSettings.managedTwitchTabId = await pickManagedTwitchTabId();
+      } else if (!redirectEnabled) {
+        newSettings.managedTwitchTabId = null;
+      }
+
       // Sanitize category
       if (newSettings.fallbackCategory) {
         // eslint-disable-next-line no-control-regex
@@ -390,6 +458,17 @@ class OptionsManager {
 
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
+
+      // Freshly enabled: poll right away so the swap happens while the user
+      // is still looking, instead of up to a full check interval later.
+      if (redirectEnabled && !wasEnabled) {
+        try {
+          await chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' });
+        } catch (err) {
+          // Not fatal; the background will still poll on interval.
+          console.warn('Failed to trigger force poll:', err);
+        }
+      }
 
       this.showSaveStatus('Saved', 'success');
       this.applyTheme();

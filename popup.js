@@ -2,7 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
-import { isTwitchUrl } from './utils/twitch-url.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 import { formatViewers, formatUptime } from './utils/format.js';
 import { computeBadge } from './utils/badge.js';
 import { moveStream } from './utils/reorder.js';
@@ -595,37 +595,7 @@ class PopupManager {
   }
 
   async pickManagedTwitchTabId() {
-    try {
-      // Prefer the current active Twitch tab
-      const activeTabs = await new Promise((resolve) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, resolve);
-      });
-      const activeTab = activeTabs?.[0];
-      if (activeTab?.id && isTwitchUrl(activeTab.url || '')) {
-        return activeTab.id;
-      }
-
-      // Otherwise, pick any existing Twitch tab (first match)
-      const twitchTabs = await new Promise((resolve) => {
-        chrome.tabs.query({ url: ['*://twitch.tv/*', '*://*.twitch.tv/*'] }, resolve);
-      });
-      if (twitchTabs?.length) {
-        return twitchTabs[0].id ?? null;
-      }
-    } catch (e) {
-      console.warn('Failed to pick managed Twitch tab:', e);
-    }
-
-    // No Twitch tab found: create one and manage it.
-    try {
-      const created = await new Promise((resolve) => {
-        chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
-      });
-      return created?.id ?? null;
-    } catch (e) {
-      console.warn('Failed to create Twitch tab:', e);
-      return null;
-    }
+    return pickManagedTwitchTabId();
   }
 
   createStreamItem(stream) {
@@ -1081,6 +1051,9 @@ class PopupManager {
     }
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
+    }
+    if (this.categorySuggestTimer) {
+      clearTimeout(this.categorySuggestTimer);
     }
   }
 }
