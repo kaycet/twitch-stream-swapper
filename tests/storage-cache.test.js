@@ -106,6 +106,32 @@ describe('StorageManager cache invalidation', () => {
     expect(asObject.runtime.fallback.active).toBe(true);
   });
 
+  it('keeps queued writes (and retries them) when the storage write fails', async () => {
+    chrome.storage.local.set.mockRejectedValueOnce(new Error('QUOTA_BYTES exceeded'));
+
+    // Immediate write surfaces the failure to the caller...
+    await expect(storage.set({ analytics: { switchCount: 5 } }, true)).rejects.toThrow();
+
+    // ...but the value must not be silently lost: reads still see it,
+    expect(await storage.get('analytics')).toEqual({ switchCount: 5 });
+
+    // and the next flush persists it.
+    await storage.set({ streams: [] }, true);
+    expect(store.get('analytics')).toEqual({ switchCount: 5 });
+    expect(store.get('streams')).toEqual([]);
+  });
+
+  it('does not resurrect a failed write over a newer one for the same key', async () => {
+    chrome.storage.local.set.mockRejectedValueOnce(new Error('transient failure'));
+
+    await expect(storage.set({ analytics: { switchCount: 1 } }, true)).rejects.toThrow();
+
+    // A newer write for the same key wins over the restored one.
+    await storage.set({ analytics: { switchCount: 2 } }, true);
+    expect(store.get('analytics')).toEqual({ switchCount: 2 });
+    expect(await storage.get('analytics')).toEqual({ switchCount: 2 });
+  });
+
   it('persists settings immediately, without waiting for the debounce flush', async () => {
     // The popup/options page can close (and the MV3 service worker can
     // suspend) within the 300ms debounce window, so saveSettings must hit

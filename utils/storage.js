@@ -103,12 +103,23 @@ class StorageManager {
   async _flush() {
     if (this.saveQueue.size === 0) return;
 
-    const items = Object.fromEntries(this.saveQueue);
+    const entries = [...this.saveQueue.entries()];
+    const items = Object.fromEntries(entries);
     this.saveQueue.clear();
 
     try {
       await chrome.storage.local.set(items);
     } catch (error) {
+      // Put the failed writes back (unless a newer write for the same key
+      // arrived while we were awaiting): reads keep seeing the queued value
+      // instead of silently reverting, and the next set()'s flush retries
+      // them. Clearing the queue on failure lost the data outright.
+      for (const [key, value] of entries) {
+        if (!this.saveQueue.has(key)) this.saveQueue.set(key, value);
+      }
+      // Reads done after the clear above may have cached un-overlaid
+      // storage values; drop them so the restored queue applies again.
+      this.cache.clear();
       console.error('Storage set error:', error);
       throw error;
     }
