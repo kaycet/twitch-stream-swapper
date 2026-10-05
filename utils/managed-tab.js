@@ -1,0 +1,48 @@
+/**
+ * Managed-tab selection for Auto-Swap.
+ *
+ * Enabling Auto-Swap binds the extension to exactly one Twitch tab. Both the
+ * popup and the Options page can enable it, so the "which tab do we manage"
+ * decision lives here: prefer the active Twitch tab, else any open Twitch
+ * tab, else create one.
+ */
+
+import { isTwitchUrl } from './twitch-url.js';
+
+/**
+ * @returns {Promise<number|null>} Tab id to manage, or null when no Twitch
+ *   tab exists and creating one failed.
+ */
+export async function pickManagedTwitchTabId() {
+  try {
+    // Prefer the current active Twitch tab
+    const activeTabs = await new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, resolve);
+    });
+    const activeTab = activeTabs?.[0];
+    if (activeTab?.id && isTwitchUrl(activeTab.url || '')) {
+      return activeTab.id;
+    }
+
+    // Otherwise, pick any existing Twitch tab (first match)
+    const twitchTabs = await new Promise((resolve) => {
+      chrome.tabs.query({ url: ['*://twitch.tv/*', '*://*.twitch.tv/*'] }, resolve);
+    });
+    if (twitchTabs?.length) {
+      return twitchTabs[0].id ?? null;
+    }
+  } catch (e) {
+    console.warn('Failed to pick managed Twitch tab:', e);
+  }
+
+  // No Twitch tab found: create one and manage it.
+  try {
+    const created = await new Promise((resolve) => {
+      chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
+    });
+    return created?.id ?? null;
+  } catch (e) {
+    console.warn('Failed to create Twitch tab:', e);
+    return null;
+  }
+}

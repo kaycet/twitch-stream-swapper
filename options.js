@@ -2,6 +2,7 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL, TWITCH_CLIENT_ID } from './utils/config.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 
 class OptionsManager {
   constructor() {
@@ -382,14 +383,38 @@ class OptionsManager {
       // Custom theme colors are validated and persisted separately via
       // applyCustomThemeSettings(); general autosave must not touch them.
 
+      // Auto-Swap manages exactly one Twitch tab. The popup toggle binds that
+      // tab when enabling; this toggle has to do the same, or it saves
+      // redirectEnabled=true with no managed tab and nothing ever switches.
+      // Disabling releases the tab, matching the popup.
+      if (newSettings.redirectEnabled && !this.settings.managedTwitchTabId) {
+        newSettings.managedTwitchTabId = await pickManagedTwitchTabId();
+      } else if (!newSettings.redirectEnabled) {
+        newSettings.managedTwitchTabId = null;
+      }
+
       // Sanitize category
       if (newSettings.fallbackCategory) {
         // eslint-disable-next-line no-control-regex
         newSettings.fallbackCategory = newSettings.fallbackCategory.replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 50);
       }
 
+      const boundManagedTab = newSettings.managedTwitchTabId != null
+        && newSettings.managedTwitchTabId !== this.settings.managedTwitchTabId;
+
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
+
+      // Just bound a tab: force a poll so Auto-Swap acts right away instead
+      // of waiting out the poll throttle/alarm (the popup toggle does this too).
+      if (boundManagedTab) {
+        try {
+          await chrome.runtime.sendMessage({ type: 'TSR_FORCE_POLL' });
+        } catch (err) {
+          // Not fatal; the background will still poll on interval.
+          console.warn('Failed to trigger force poll:', err);
+        }
+      }
 
       this.showSaveStatus('Saved', 'success');
       this.applyTheme();
