@@ -13,6 +13,7 @@ import { shouldRerollCategoryFallback } from './utils/fallback-mode.js';
 import { isTwitchUrl, getChannelFromTwitchUrl, isRaidReferrerUrl } from './utils/twitch-url.js';
 import { computeBadge } from './utils/badge.js';
 import { memoizeAsync } from './utils/memoize-async.js';
+import { createTaskQueue } from './utils/task-queue.js';
 import {
   NOT_NOW_BUTTON,
   isAutoswapNotificationId,
@@ -32,6 +33,11 @@ class BackgroundWorker {
     // worker lifetime, but a rejected init is forgotten so the next event
     // retries instead of inheriting a permanently failed promise.
     this.init = memoizeAsync(() => this._init());
+    // Polls run strictly one at a time. They await network calls, so a
+    // forced poll (popup/options actions bypass the 5s throttle) could
+    // interleave with the alarm poll — both saw wasLive=false for a stream
+    // that just went live and double-fired notifications/prompts.
+    this._pollQueue = createTaskQueue();
     this.runtime = {
       fallback: {
         active: false,
@@ -85,9 +91,18 @@ class BackgroundWorker {
   async forcePollNow() {
     // Ensure the poller is running and settings are loaded
     await this.init();
-    // Bypass 5s throttle
-    this.lastPollTime = 0;
-    await this.pollStreams();
+    // Bypass the 5s throttle — but only when our queued turn actually runs.
+    // Resetting it up front would let an in-flight poll finish first and
+    // re-arm the throttle, silently swallowing the forced poll (and with it
+    // the status check for a just-added stream).
+    await this._pollQueue(() => {
+      this.lastPollTime = 0;
+      return this._pollStreamsNow();
+    });
+  }
+
+  pollStreams() {
+    return this._pollQueue(() => this._pollStreamsNow());
   }
 
   async handleSettingsChange(newSettings) {
@@ -178,14 +193,15 @@ class BackgroundWorker {
     chrome.alarms.create('tsr-poll-retry', { delayInMinutes: Math.max(1, delayMs / 60000) });
   }
 
-  async pollStreams() {
+  async _pollStreamsNow() {
     // Ensure modules are loaded
     if (!storage || !twitchAPI) {
       console.warn('Modules not loaded yet, skipping poll');
       return;
     }
 
-    // Prevent concurrent polls
+    // Throttle back-to-back polls (concurrency is already impossible: every
+    // poll goes through this._pollQueue).
     const now = Date.now();
     if (now - this.lastPollTime < 5000) {
       return; // Minimum 5 seconds between polls
