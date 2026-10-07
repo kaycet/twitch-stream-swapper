@@ -9,6 +9,12 @@ export default [
       'build/**',
       '*.zip',
       'node_modules/**',
+      // Gitignored local-tooling output. Flat config does not read
+      // .gitignore, so without these entries `npm run lint` crawls the
+      // Chrome profile left behind by `npm run screenshots` (and any
+      // wrangler dev state) and fails on its unparseable bundled JS.
+      '.tmp-store-screenshots-profile/**',
+      '.wrangler/**',
     ],
   },
   {
