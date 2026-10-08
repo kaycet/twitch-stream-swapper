@@ -229,8 +229,21 @@ class BackgroundWorker {
       const statusUpdatesByUsername = new Map();
 
       for (const stream of prioritized) {
-        // Missing entries (e.g. usernames the API layer filtered out as invalid)
-        // must count as offline, so check for both null and undefined.
+        // Usernames missing from the results had no status check this poll
+        // (invalid format, or their request batch failed while another
+        // succeeded). Keep their last-known state: marking them offline
+        // would reset wasLive and re-fire "went live" notifications for the
+        // whole batch once the network recovers. A last-known-live stream
+        // also stays a valid switch target, so a partial outage doesn't
+        // switch away from it or kick in category fallback.
+        if (!(stream.username in statuses)) {
+          if (stream.isLive && !highestPriorityLive) {
+            highestPriorityLive = stream;
+          }
+          continue;
+        }
+
+        // null (as opposed to missing) means confirmed offline.
         const isLive = statuses[stream.username] != null;
         
         // Update stream status

@@ -250,7 +250,11 @@ class TwitchAPI {
   /**
    * Check if multiple streams are live (batch request)
    * @param {string[]} usernames - Array of usernames (up to 100)
-   * @returns {Promise<Object>} - Map of username -> stream data or null
+   * @returns {Promise<Object>} - Map of username -> stream data (live) or
+   *   null (confirmed offline). Usernames whose status could not be checked
+   *   (invalid format, or their batch failed while another succeeded) are
+   *   omitted entirely so callers can keep last-known state instead of
+   *   treating them as freshly offline.
    * @throws {Error} - If there's a critical error that should be handled by caller
    */
   async checkStreamsStatus(usernames) {
@@ -300,10 +304,11 @@ class TwitchAPI {
         console.error('Error checking stream status:', error);
         lastError = error;
 
-        // Mark all in batch as null on error
-        batch.forEach(username => {
-          results[username] = null;
-        });
+        // Leave this batch's usernames out of the results instead of marking
+        // them null: null means "confirmed offline", and reporting offline
+        // for streams we simply could not check resets the callers' wasLive
+        // tracking — re-firing "went live" notifications for the whole batch
+        // once the network recovers.
       }
     }
 

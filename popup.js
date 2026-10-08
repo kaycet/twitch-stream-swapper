@@ -918,9 +918,14 @@ class PopupManager {
       // is open.
       const displayFields = ['title', 'game_name', 'viewer_count', 'started_at'];
       this.streams.forEach(stream => {
+        // Missing entries had no status check this round (invalid format, or
+        // their request batch failed while another succeeded); keep showing
+        // the last-known state rather than flashing them offline.
+        if (!(stream.username in statuses)) return;
+
         const wasLive = stream.isLive || false;
-        // Treat missing entries (invalid/filtered usernames) as offline too.
-        const data = statuses[stream.username] ?? null;
+        // null (as opposed to missing) means confirmed offline.
+        const data = statuses[stream.username];
         const isLive = data != null;
 
         if (wasLive !== isLive) {
