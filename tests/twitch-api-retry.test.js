@@ -118,7 +118,12 @@ describe('TwitchAPI request retries', () => {
     const results = await request;
 
     expect(results['channel_000']).toEqual({ user_login: 'channel_000' });
-    expect(results['channel_100']).toBeNull();
+    // Streams from the successful batch that are offline are confirmed null...
+    expect(results['channel_001']).toBeNull();
+    // ...but the failed batch's streams are omitted entirely: null would mean
+    // "confirmed offline" and reset the callers' wasLive tracking, re-firing
+    // "went live" notifications for the whole batch after the network recovers.
+    expect('channel_100' in results).toBe(false);
   });
 
   it('does not retry non-retryable errors (401)', async () => {
