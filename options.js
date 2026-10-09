@@ -43,10 +43,15 @@ class OptionsManager {
       this.settings.premiumStatus = checked;
       storage.saveSettings(this.settings).then(() => {
         this.updatePremiumFeatures();
+        // Re-sync the custom-theme editor: its inputs' disabled state is
+        // derived from premiumStatus, so flipping Supporter must re-enable
+        // (or re-disable) them without requiring a theme change or reload.
+        // Saving premiumStatus applies nothing from the Advanced or
+        // custom-theme forms, so pending edits there stay dirty and their
+        // Apply buttons stay live.
+        this.updateCustomThemeVisibility();
         if (this.settings.premiumStatus) this.loadAnalytics();
         this.showSaveStatus('Saved', 'success');
-        this.setAdvancedDirty(false);
-        this.setCustomThemeDirty(false);
       });
     });
 
