@@ -384,13 +384,19 @@ class PopupManager {
   }
 
   async validateUsername(username) {
-    if (!username || username.trim().length === 0) return;
-    
+    const input = document.getElementById('streamInput');
+
+    // Empty input is not an error: clear any leftover red border from a
+    // previous invalid value instead of leaving it stuck.
+    if (!username || username.trim().length === 0) {
+      input.style.borderColor = '#3d3d47';
+      return;
+    }
+
     // Basic validation - alphanumeric, underscores, hyphens
     const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
-    const input = document.getElementById('streamInput');
-    
-    if (!valid && username.trim().length > 0) {
+
+    if (!valid) {
       input.style.borderColor = '#e91916';
     } else {
       input.style.borderColor = '#3d3d47';
@@ -616,10 +622,14 @@ class PopupManager {
       console.warn('Failed to pick managed Twitch tab:', e);
     }
 
-    // No Twitch tab found: create one and manage it.
+    // No Twitch tab found: create one and manage it. It must open in the
+    // background: an active tab steals focus, which closes this popup and
+    // destroys its JS context before the caller's saveSettings() runs — the
+    // user got a new tab but redirectEnabled/managedTwitchTabId were never
+    // persisted.
     try {
       const created = await new Promise((resolve) => {
-        chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
+        chrome.tabs.create({ url: 'https://www.twitch.tv/', active: false }, resolve);
       });
       return created?.id ?? null;
     } catch (e) {
@@ -985,8 +995,14 @@ class PopupManager {
     const isEnabled = !!categoryName;
     const toggle = document.getElementById('fallbackEnabledToggle');
     const input = document.getElementById('fallbackCategoryInput');
-    if (toggle) toggle.checked = isEnabled;
-    if (input && input !== document.activeElement) {
+    // While the user is typing a category the toggle is checked but nothing
+    // is saved yet; this refresh runs on every poll and settings event, so
+    // syncing the toggle then would snap it OFF under their cursor.
+    if (toggle && input !== document.activeElement) toggle.checked = isEnabled;
+    // Never blank the input: disabling fallback clears the stored category,
+    // and wiping the field too would force the user to retype it just to
+    // re-enable (the toggle handler saves whatever text is still here).
+    if (input && input !== document.activeElement && categoryName) {
       input.value = categoryName;
     }
   }
