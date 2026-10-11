@@ -50,6 +50,10 @@ class OptionsManager {
       // turned Auto-Swap back off.
       storage.saveSettings({ premiumStatus: checked }).then(() => {
         this.updatePremiumFeatures();
+        // Premium gates the themes: turning supporter features off must also
+        // drop an applied premium/custom theme, not leave it painted until
+        // the next page load.
+        this.applyTheme();
         if (this.settings.premiumStatus) this.loadAnalytics();
         this.showSaveStatus('Saved', 'success');
         this.setAdvancedDirty(false);
@@ -799,6 +803,11 @@ class OptionsManager {
     // Remove any previously injected theme link(s)
     document.querySelectorAll('link[data-tsr-theme="1"]').forEach((el) => el.remove());
 
+    // Always clear custom vars first (popup.js applies the same order): with
+    // theme === 'custom' but supporter features off, the early return below
+    // used to leave previously-applied custom colors painted.
+    this.clearCustomThemeVars();
+
     // Apply custom theme variables (supporter-only)
     if (theme === 'custom') {
       if (this.settings.premiumStatus) {
@@ -807,9 +816,6 @@ class OptionsManager {
       }
       return;
     }
-
-    // Clear custom vars back to defaults
-    this.clearCustomThemeVars();
 
     // Load theme CSS if supporter features enabled
     if (this.settings.premiumStatus && theme !== 'default') {
