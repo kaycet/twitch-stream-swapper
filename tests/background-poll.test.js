@@ -112,7 +112,7 @@ describe('background poll loop', () => {
     api.initialize = async () => {};
     api.checkStreamsStatus = async () => (live
       ? { alpha: { title: 'T', game_name: 'G', viewer_count: 5, started_at: 'x', thumbnail_url: 'u' } }
-      : {});
+      : { alpha: null });
 
     storage = (await import('../utils/storage.js')).default;
     await import('../background.js');
