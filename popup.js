@@ -1104,6 +1104,9 @@ class PopupManager {
     if (this.messageTimer) {
       clearTimeout(this.messageTimer);
     }
+    if (this.categorySuggestTimer) {
+      clearTimeout(this.categorySuggestTimer);
+    }
   }
 }
 

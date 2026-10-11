@@ -131,6 +131,23 @@ describe('StorageManager cache invalidation', () => {
     expect(store.get('analytics')?.switchCount).toBe(2);
   });
 
+  it('does not keep serving a value read while a failed write was in flight', async () => {
+    store.set('analytics', { switchCount: 0 });
+    let rejectWrite;
+    chrome.storage.local.set.mockImplementationOnce(
+      () => new Promise((_, reject) => { rejectWrite = reject; })
+    );
+
+    const write = storage.set({ analytics: { switchCount: 7 } }, true);
+    // The queue is already drained, so this read sees (and caches) the old value.
+    expect((await storage.get('analytics')).switchCount).toBe(0);
+
+    rejectWrite(new Error('quota exceeded'));
+    await expect(write).rejects.toThrow('quota exceeded');
+
+    expect((await storage.get('analytics')).switchCount).toBe(7);
+  });
+
   it('merges a partial settings save over stored settings instead of replacing them', async () => {
     // Callers (popup, options) pass only the fields they change; fields
     // written by other contexts in the meantime must survive the merge.

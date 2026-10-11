@@ -117,6 +117,9 @@ class StorageManager {
           this.saveQueue.set(key, value);
         }
       }
+      // A get() that ran while the write was in flight found an empty queue
+      // and cached the old stored value; drop it so reads see the requeued one.
+      this.cache.clear();
       console.error('Storage set error:', error);
       throw error;
     }
