@@ -61,10 +61,12 @@ export async function pickManagedTwitchTabId() {
     console.warn('Failed to pick managed Twitch tab:', e);
   }
 
-  // No Twitch tab found: create one and manage it.
+  // No Twitch tab found: create one and manage it. It must open in the
+  // background: an active tab steals focus, which closes the popup and
+  // destroys its JS context before the caller's saveSettings() runs.
   try {
     const created = await new Promise((resolve) => {
-      chrome.tabs.create({ url: 'https://www.twitch.tv/' }, (tab) => {
+      chrome.tabs.create({ url: 'https://www.twitch.tv/', active: false }, (tab) => {
         // Read lastError so a failed create resolves null instead of
         // logging "Unchecked runtime.lastError".
         if (chrome.runtime?.lastError) return resolve(null);

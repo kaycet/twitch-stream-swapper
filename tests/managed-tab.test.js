@@ -59,7 +59,7 @@ describe('pickManagedTwitchTabId', () => {
     });
     await expect(pickManagedTwitchTabId()).resolves.toBe(42);
     expect(chrome.tabs.create).toHaveBeenCalledWith(
-      { url: 'https://www.twitch.tv/' },
+      { url: 'https://www.twitch.tv/', active: false },
       expect.any(Function),
     );
   });

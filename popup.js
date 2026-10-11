@@ -405,15 +405,21 @@ class PopupManager {
   }
 
   async validateUsername(username) {
-    if (!username || username.trim().length === 0) return;
-    
+    const input = document.getElementById('streamInput');
+
+    // Empty input is not an error: clear any leftover red border from a
+    // previous invalid value instead of leaving it stuck.
+    if (!username || username.trim().length === 0) {
+      input.style.borderColor = '#3d3d47';
+      return;
+    }
+
     // Basic validation - alphanumeric and underscores. New Twitch accounts
     // need 4+ characters, but legacy 3-character logins still exist and
     // stream, so the minimum here is 3.
     const valid = /^[a-zA-Z0-9_]{3,25}$/.test(username.trim());
-    const input = document.getElementById('streamInput');
-    
-    if (!valid && username.trim().length > 0) {
+
+    if (!valid) {
       input.style.borderColor = '#e91916';
     } else {
       input.style.borderColor = '#3d3d47';
@@ -998,8 +1004,14 @@ class PopupManager {
     const isEnabled = !!categoryName;
     const toggle = document.getElementById('fallbackEnabledToggle');
     const input = document.getElementById('fallbackCategoryInput');
-    if (toggle) toggle.checked = isEnabled;
-    if (input && input !== document.activeElement) {
+    // While the user is typing a category the toggle is checked but nothing
+    // is saved yet; this refresh runs on every poll and settings event, so
+    // syncing the toggle then would snap it OFF under their cursor.
+    if (toggle && input !== document.activeElement) toggle.checked = isEnabled;
+    // Never blank the input: disabling fallback clears the stored category,
+    // and wiping the field too would force the user to retype it just to
+    // re-enable (the toggle handler saves whatever text is still here).
+    if (input && input !== document.activeElement && categoryName) {
       input.value = categoryName;
     }
   }
