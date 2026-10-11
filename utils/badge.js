@@ -1,3 +1,5 @@
+import { pickSwitchTarget } from './stream-target.js';
+
 /**
  * Toolbar badge presentation (pure, unit-tested).
  *
@@ -26,10 +28,10 @@
  */
 export function badgeStateFromStreams(streams) {
   if (!Array.isArray(streams)) return { liveCount: 0, target: null };
-  const live = streams
-    .filter((s) => s?.isLive && s?.username)
-    .sort((a, b) => (a.priority ?? Infinity) - (b.priority ?? Infinity));
-  return { liveCount: live.length, target: live[0]?.username || null };
+  const live = streams.filter((s) => s?.isLive && s?.username);
+  // The count includes switched-off channels (they are still live); the
+  // target is only ever one Auto-Swap would actually pick.
+  return { liveCount: live.length, target: pickSwitchTarget(live)?.username || null };
 }
 
 export function computeBadge({ enabled, liveCount = 0, target = null } = {}) {

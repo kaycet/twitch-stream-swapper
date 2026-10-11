@@ -210,3 +210,73 @@ describe('background poll loop', () => {
     setSpy.mockRestore();
   });
 });
+
+describe('background poll loop: per-channel Auto-Swap toggle', () => {
+  let harness;
+  let updates;
+  let forcePoll;
+
+  async function boot(streams) {
+    vi.resetModules();
+    harness = makeHarness();
+    updates = [];
+    harness.chrome.tabs.update = (id, props, cb) => {
+      updates.push(props.url);
+      cb({ id });
+    };
+    globalThis.chrome = harness.chrome;
+
+    harness.store.set('settings', {
+      clientId: 'test-client-id',
+      redirectEnabled: true,
+      promptBeforeSwitch: false,
+      notificationsEnabled: false,
+      premiumStatus: false,
+      checkInterval: 60000,
+      managedTwitchTabId: 9,
+      fallbackCategory: '',
+      quietHours: { enabled: false },
+    });
+    harness.store.set('streams', streams);
+
+    const api = (await import('../utils/twitch-api.js')).default;
+    api.initialize = async () => {};
+    api.checkStreamsStatus = async (usernames) => Object.fromEntries(
+      usernames.map((u) => [u, { title: 'T', game_name: 'G', viewer_count: 1, started_at: 'x' }])
+    );
+
+    await import('../background.js');
+    const handler = harness.messageListeners[0];
+    forcePoll = async () => {
+      await new Promise((resolve) => handler({ type: 'TSR_FORCE_POLL' }, {}, resolve));
+      for (let i = 0; i < 50; i += 1) await Promise.resolve();
+    };
+  }
+
+  afterEach(() => {
+    delete globalThis.chrome;
+  });
+
+  it('switches past a live channel that is switched off', async () => {
+    await boot([
+      { username: 'paused', priority: 1, enabled: false },
+      { username: 'active', priority: 2 },
+    ]);
+    await forcePoll();
+
+    // The worker's own startup poll may switch too (the fake tab's URL never
+    // changes), so assert on the targets rather than the count.
+    expect(updates.length).toBeGreaterThan(0);
+    expect(new Set(updates)).toEqual(new Set(['https://www.twitch.tv/active']));
+  });
+
+  it('does not switch at all when only switched-off channels are live', async () => {
+    await boot([{ username: 'paused', priority: 1, enabled: false }]);
+    await forcePoll();
+
+    expect(updates).toEqual([]);
+    // Still status-checked, so the popup keeps showing it live.
+    expect(harness.store.get('streams')[0].isLive).toBe(true);
+    expect(harness.store.get('streams')[0].enabled).toBe(false);
+  });
+});

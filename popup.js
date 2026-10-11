@@ -7,6 +7,7 @@ import { formatViewers, formatUptime } from './utils/format.js';
 import { computeBadge } from './utils/badge.js';
 import { moveStream } from './utils/reorder.js';
 import { overlayStreamStatuses } from './utils/stream-sync.js';
+import { isSwapEnabled, pickSwitchTarget } from './utils/stream-target.js';
 import {
   createDragState,
   startDrag,
@@ -651,6 +652,8 @@ class PopupManager {
 
     const isLive = stream.isLive || false;
     const notifyOn = stream.notify !== false;
+    const swapOn = isSwapEnabled(stream);
+    item.classList.toggle('paused', !swapOn);
     const data = isLive ? stream.streamData : null;
 
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -683,12 +686,24 @@ class PopupManager {
         ${metaParts.length > 0 ? `<div class="stream-meta">${metaParts.join(' · ')}</div>` : ''}
       </div>
       <div class="stream-actions">
+        <label class="swap-toggle" title="${swapOn ? 'Auto-Swap on for this channel — click to skip it' : 'Skipped by Auto-Swap — click to include it'}">
+          <input type="checkbox" data-action="swap" ${swapOn ? 'checked' : ''}
+            aria-label="Auto-Swap to ${esc(stream.username)}">
+          <span class="swap-slider" aria-hidden="true"></span>
+        </label>
         <button class="action-btn notify-btn ${notifyOn ? '' : 'muted'}" data-action="notify"
           aria-pressed="${notifyOn}"
           title="${notifyOn ? 'Notifications on — click to mute' : 'Notifications muted — click to unmute'}">${bellIcon}</button>
         <button class="action-btn" data-action="remove" title="Remove">×</button>
       </div>
     `;
+
+    // Per-channel Auto-Swap switch
+    const swapInput = item.querySelector('[data-action="swap"]');
+    swapInput.addEventListener('click', (e) => e.stopPropagation());
+    swapInput.addEventListener('change', () => {
+      this.toggleSwapEnabled(stream.username);
+    });
 
     // Notification bell
     item.querySelector('[data-action="notify"]').addEventListener('click', (e) => {
@@ -711,6 +726,22 @@ class PopupManager {
     stream.notify = stream.notify === false;
     await storage.saveStreams(this.streams);
     this.render();
+  }
+
+  async toggleSwapEnabled(username) {
+    const stream = this.streams.find((s) => s.username === username);
+    if (!stream) return;
+    stream.enabled = !isSwapEnabled(stream);
+    await storage.saveStreams(this.streams);
+    this.render();
+    this.updateCurrentStream();
+    this.showMessage(
+      stream.enabled ? `Auto-Swap will include ${username}` : `Auto-Swap will skip ${username}`,
+      'success'
+    );
+    // Switching off the channel being watched should move to the next one
+    // (or fallback) now, not at the next scheduled poll.
+    await this.forcePollAndSwap();
   }
 
   setupDragAndDrop() {
@@ -980,8 +1011,9 @@ class PopupManager {
     const currentStreamDiv = document.getElementById('currentStream');
     const currentInfo = document.getElementById('currentInfo');
 
-    // Find highest priority live stream
-    const liveStream = this.streams.find(s => s.isLive);
+    // Highest-priority live channel Auto-Swap would pick (switched-off
+    // channels are skipped, exactly as the background worker does).
+    const liveStream = pickSwitchTarget(this.streams);
 
     if (liveStream) {
       currentStreamDiv.style.display = 'block';

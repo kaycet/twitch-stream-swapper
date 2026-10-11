@@ -24,6 +24,7 @@
 ## What it does
 
 - **Priority list**: add streamers and drag to set priority.
+- **Per-channel on/off**: switch a channel off to have Auto-Swap skip it without removing it from the list (it still shows live status and can still notify).
 - **Auto‑Swap (optional)**: manages **one** Twitch tab and redirects it to the top live streamer.
 - **Category fallback (optional)**: if nobody is live, it can pick a random stream from a category.
 - **On‑page status pill**: shows when Auto‑Swap is active; indicates fallback mode and lets you pick a new random.

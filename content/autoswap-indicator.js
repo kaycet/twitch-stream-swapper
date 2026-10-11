@@ -118,8 +118,10 @@ async function getMyTabId() {
 function pickTargetStream(streams) {
   if (!Array.isArray(streams) || streams.length === 0) return null;
   const sorted = [...streams].sort((a, b) => (a.priority ?? 9999) - (b.priority ?? 9999));
-  const live = sorted.find(s => s?.isLive);
-  return live || sorted[0] || null;
+  // Channels switched off in the popup (enabled === false) are never a target.
+  const on = sorted.filter(s => s?.enabled !== false);
+  const live = on.find(s => s?.isLive);
+  return live || on[0] || null;
 }
 
 async function refresh() {

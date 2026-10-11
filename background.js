@@ -15,6 +15,7 @@ import { computeBadge, badgeStateFromStreams } from './utils/badge.js';
 import { viewingCreditSeconds } from './utils/analytics.js';
 import { mergeStatusUpdates, statusSnapshot } from './utils/stream-sync.js';
 import { memoizeAsync } from './utils/memoize-async.js';
+import { isSwapEnabled } from './utils/stream-target.js';
 import { serializeAsync } from './utils/serialize-async.js';
 import {
   NOT_NOW_BUTTON,
@@ -275,7 +276,7 @@ class BackgroundWorker {
         // also stays a valid switch target, so a partial outage doesn't
         // switch away from it or kick in category fallback.
         if (!(stream.username in statuses)) {
-          if (stream.isLive && !highestPriorityLive) {
+          if (stream.isLive && !highestPriorityLive && isSwapEnabled(stream)) {
             highestPriorityLive = stream;
           }
           continue;
@@ -288,7 +289,9 @@ class BackgroundWorker {
         stream.isLive = isLive;
         stream.streamData = statuses[stream.username] || null;
 
-        if (isLive && !highestPriorityLive) {
+        // Channels switched off in the popup still get status checks and
+        // notifications, but are never an Auto-Swap target.
+        if (isLive && !highestPriorityLive && isSwapEnabled(stream)) {
           highestPriorityLive = stream;
         }
 
