@@ -8,7 +8,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "package": "node scripts/package-extension.mjs",
-    "ci": "npm run lint && npm run test && npm run package",
+    "ci": "npm run lint && npm run test && npm run audit:dom && npm run package",
     "screenshots": "node scripts/generate-store-screenshots.mjs",
     "audit:dom": "node tools/audit-dom-hooks.mjs"
   },

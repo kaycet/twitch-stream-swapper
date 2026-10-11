@@ -37,6 +37,22 @@ describe('ErrorMessageManager.getErrorMessage', () => {
     expect(info.message).toMatch(/received invalid data from twitch/i);
   });
 
+  // Regression: the auth branch also matches "client id", so the Options
+  // page's Advanced validation error ("Client ID appears to be invalid",
+  // context saveSettings) was misreported as a token-broker outage and the
+  // dedicated advanced-setting copy was unreachable.
+  it('routes the Advanced Client ID validation error to the advanced-setting copy', () => {
+    const info = get('Client ID appears to be invalid', 'saveSettings');
+    expect(info.message).toMatch(/invalid twitch client id/i);
+    expect(info.message).not.toMatch(/authorization failed|not configured/i);
+    expect(info.action).toMatch(/clear the field/i);
+  });
+
+  it('still blames the broker for coded auth errors in saveSettings context', () => {
+    const err = Object.assign(new Error('Twitch Client ID not set.'), { code: 'AUTH_ERROR' });
+    expect(get(err, 'saveSettings').message).toMatch(/authorization failed/i);
+  });
+
   it('classifies invalid username errors correctly', () => {
     const info = get(new Error('Invalid username format'));
     expect(info.message).toMatch(/twitch usernames must be 4-25/i);
@@ -62,5 +78,15 @@ describe('ErrorMessageManager.getErrorMessage', () => {
     expect(() => get(null)).not.toThrow();
     expect(() => get(undefined)).not.toThrow();
     expect(get('plain string error').type).toBe('error');
+  });
+
+  // Regression: non-string inputs used to reach errorMessage.toLowerCase()
+  // and throw inside the caller's catch block, masking the original error.
+  it('degrades non-string inputs to the generic copy instead of throwing', () => {
+    expect(get({}).message).toBe('An unknown error occurred');
+    expect(get(42).message).toBe('An unknown error occurred');
+    expect(get({ message: 42 }).message).toBe('An unknown error occurred');
+    expect(get(new Error('')).message).toBe('An unknown error occurred');
+    expect(get({}).type).toBe('error');
   });
 });

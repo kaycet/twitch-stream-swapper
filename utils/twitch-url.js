@@ -30,7 +30,10 @@ export function getChannelFromTwitchUrl(url) {
       'directory', 'downloads', 'p', 'videos', 'clips', 'search',
       'settings', 'subscriptions', 'wallet', 'turbo', 'prime',
       'inventory', 'drops', 'friends', 'messages', 'moderator',
-      'safety', 'jobs', 'privacy', 'terms'
+      'safety', 'jobs', 'privacy', 'terms',
+      // First path segment is a feature, not a channel: /popout/<channel>/chat,
+      // /embed/<channel>/chat, /team/<name>, /collections/<id>, /following
+      'popout', 'embed', 'team', 'collections', 'following'
     ]);
     if (reserved.has(seg.toLowerCase())) return null;
     return seg.toLowerCase();

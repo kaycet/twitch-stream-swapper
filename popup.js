@@ -2,11 +2,12 @@ import storage from './utils/storage.js';
 import twitchAPI from './utils/twitch-api.js';
 import ErrorMessageManager from './utils/error-messages.js';
 import { KO_FI_URL } from './utils/config.js';
-import { isTwitchUrl } from './utils/twitch-url.js';
+import { pickManagedTwitchTabId } from './utils/managed-tab.js';
 import { formatViewers, formatUptime } from './utils/format.js';
 import { computeBadge } from './utils/badge.js';
 import { moveStream } from './utils/reorder.js';
 import { overlayStreamStatuses } from './utils/stream-sync.js';
+import { isSwapEnabled, pickSwitchTarget } from './utils/stream-target.js';
 import {
   createDragState,
   startDrag,
@@ -29,6 +30,7 @@ class PopupManager {
     this.dragOffset = { x: 0, y: 0 };
     this.categorySuggestTimer = null;
     this.categorySuggestCache = new Map(); // query -> { ts, items }
+    this.messageTimer = null;
   }
 
   async forcePollAndSwap() {
@@ -63,10 +65,10 @@ class PopupManager {
       // If Auto-Swap is enabled but no managed tab is set (e.g., after updates/migrations),
       // immediately bind to a single Twitch tab (or create one) so "enable" always opens a tab.
       if (this.settings?.redirectEnabled && !this.settings?.managedTwitchTabId) {
-        const managedTwitchTabId = await this.pickManagedTwitchTabId();
-        const newSettings = { ...this.settings, managedTwitchTabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        const managedTwitchTabId = await pickManagedTwitchTabId();
+        // Save only this field (see the Auto-Swap toggle handler for why).
+        await storage.saveSettings({ managedTwitchTabId });
+        this.settings = { ...this.settings, managedTwitchTabId };
         // Force a poll/swap so user sees it immediately.
         await this.forcePollAndSwap();
       }
@@ -189,7 +191,12 @@ class PopupManager {
     if (supportBtn) {
       supportBtn.addEventListener('click', async () => {
         try {
-          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, resolve));
+          await new Promise((resolve) => chrome.tabs.create({ url: KO_FI_URL }, () => {
+            // Read lastError so a failed create doesn't log "Unchecked
+            // runtime.lastError"; opening a support tab is best-effort.
+            void chrome.runtime.lastError;
+            resolve();
+          }));
         } catch {
           // Non-fatal
         }
@@ -250,6 +257,10 @@ class PopupManager {
         // enabling: if empty, keep focus on input
         const current = (fallbackInput?.value || '').trim();
         if (!current) {
+          // Nothing was saved, so don't leave the checkbox looking enabled —
+          // closing the popup here made the UI claim a fallback that
+          // settings.fallbackCategory ('') doesn't have.
+          e.target.checked = false;
           this.showMessage('Type a category name', 'info');
           fallbackInput?.focus();
         } else {
@@ -268,16 +279,18 @@ class PopupManager {
         // When the user picks a datalist option or blurs after typing, apply it.
         const value = fallbackInput.value.trim();
         if (!value) return;
-        await this.saveFallbackCategory(value);
-        this.showMessage('Category fallback updated', 'success');
+        if (await this.saveFallbackCategory(value)) {
+          this.showMessage('Category fallback updated', 'success');
+        }
       });
       fallbackInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           const value = fallbackInput.value.trim();
           if (!value) return;
-          await this.saveFallbackCategory(value);
-          this.showMessage('Category fallback updated', 'success');
+          if (await this.saveFallbackCategory(value)) {
+            this.showMessage('Category fallback updated', 'success');
+          }
         }
       });
     }
@@ -290,8 +303,9 @@ class PopupManager {
           fallbackInput?.focus();
           return;
         }
-        await this.saveFallbackCategory(value);
-        this.showMessage('Category fallback updated', 'success');
+        if (await this.saveFallbackCategory(value)) {
+          this.showMessage('Category fallback updated', 'success');
+        }
       });
     }
 
@@ -315,15 +329,18 @@ class PopupManager {
         // If enabling, bind auto-swap to exactly one Twitch tab (so other Twitch tabs won't be touched)
         let managedTwitchTabId = this.settings?.managedTwitchTabId ?? null;
         if (checked) {
-          managedTwitchTabId = await this.pickManagedTwitchTabId();
+          managedTwitchTabId = await pickManagedTwitchTabId();
         } else {
           managedTwitchTabId = null;
         }
 
-        // Persist setting
-        const newSettings = { ...this.settings, redirectEnabled: checked, managedTwitchTabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        // Persist only the fields this toggle owns: saveSettings merges over
+        // the stored settings, while saving the whole (possibly stale)
+        // this.settings copy reverts anything written elsewhere (Options
+        // autosave, the background unbinding a closed managed tab) in the
+        // window before this page's storage.onChanged merge lands.
+        await storage.saveSettings({ redirectEnabled: checked, managedTwitchTabId });
+        this.settings = { ...this.settings, redirectEnabled: checked, managedTwitchTabId };
         this.updateAutoSwapUI();
 
         // Force a poll/swap immediately when enabling
@@ -348,10 +365,15 @@ class PopupManager {
     }
 
     // Keep popup UI in sync if settings change elsewhere
-    chrome.storage.onChanged.addListener((changes, area) => {
+    chrome.storage.onChanged.addListener(async (changes, area) => {
       if (area !== 'local') return;
       if (changes.settings?.newValue) {
-        this.settings = { ...this.settings, ...changes.settings.newValue };
+        // Re-read through storage.getSettings() instead of merging the raw
+        // stored object: stored clientId is '' when the Advanced override is
+        // off, and only getSettings() resolves it to the built-in ID. Merging
+        // the raw value blanked this.settings.clientId and the periodic
+        // status checks (checkStreamStatuses) stopped until popup reopen.
+        this.settings = await storage.getSettings();
         this.updateAutoSwapUI();
         this.updateCategoryFallbackWidget();
         this.applyTheme();
@@ -384,13 +406,21 @@ class PopupManager {
   }
 
   async validateUsername(username) {
-    if (!username || username.trim().length === 0) return;
-    
-    // Basic validation - alphanumeric, underscores, hyphens
-    const valid = /^[a-zA-Z0-9_]{4,25}$/.test(username.trim());
     const input = document.getElementById('streamInput');
-    
-    if (!valid && username.trim().length > 0) {
+
+    // Empty input is not an error: clear any leftover red border from a
+    // previous invalid value instead of leaving it stuck.
+    if (!username || username.trim().length === 0) {
+      input.style.borderColor = '#3d3d47';
+      return;
+    }
+
+    // Basic validation - alphanumeric and underscores. New Twitch accounts
+    // need 4+ characters, but legacy 3-character logins still exist and
+    // stream, so the minimum here is 3.
+    const valid = /^[a-zA-Z0-9_]{3,25}$/.test(username.trim());
+
+    if (!valid) {
       input.style.borderColor = '#e91916';
     } else {
       input.style.borderColor = '#3d3d47';
@@ -406,8 +436,9 @@ class PopupManager {
       return;
     }
 
-    // Validate username format
-    if (!/^[a-zA-Z0-9_]{4,25}$/.test(username)) {
+    // Validate username format (3+ chars: legacy Twitch logins can be shorter
+    // than the 4-character minimum for new accounts)
+    if (!/^[a-zA-Z0-9_]{3,25}$/.test(username)) {
       this.showMessage('Invalid username format', 'error');
       return;
     }
@@ -469,8 +500,9 @@ class PopupManager {
     const streamCount = document.getElementById('streamCount');
     const premiumBadge = document.getElementById('premiumBadge');
 
-    // Update count
-    streamCount.textContent = `${this.streams.length} stream${this.streams.length !== 1 ? 's' : ''}`;
+    // Update count ("channel" to match the rest of the UI copy, e.g. the
+    // "Add channel" button and the empty state)
+    streamCount.textContent = `${this.streams.length} channel${this.streams.length !== 1 ? 's' : ''}`;
     
     // Show premium badge
     if (this.settings?.premiumStatus) {
@@ -499,12 +531,17 @@ class PopupManager {
 
     // Setup drag and drop
     this.setupDragAndDrop();
-    
+
     // Update category fallback widget
     this.updateCategoryFallbackWidget();
 
     // Update auto-swap UI
     this.updateAutoSwapUI();
+
+    // Re-apply the current-stream highlight: the rows above were rebuilt
+    // without their `is-current` class, so without this a bell toggle or
+    // remove/reorder dropped the LIVE marker until the next 30s status poll.
+    this.updateCurrentStream();
   }
 
   updateAutoSwapUI() {
@@ -562,10 +599,10 @@ class PopupManager {
       }
 
       if (tabId == null) {
-        tabId = await this.pickManagedTwitchTabId();
-        const newSettings = { ...this.settings, managedTwitchTabId: tabId };
-        await storage.saveSettings(newSettings);
-        this.settings = newSettings;
+        tabId = await pickManagedTwitchTabId();
+        // Save only this field (see the Auto-Swap toggle handler for why).
+        await storage.saveSettings({ managedTwitchTabId: tabId });
+        this.settings = { ...this.settings, managedTwitchTabId: tabId };
         this.updateAutoSwapUI();
       }
 
@@ -582,49 +619,27 @@ class PopupManager {
         });
       });
 
+      // Read lastError in these callbacks: the tab/window can close between
+      // the get() above and these calls, and an unchecked failure logs
+      // "Unchecked runtime.lastError" (same convention as background.js).
       if (tab?.windowId != null) {
-        await new Promise((resolve) => chrome.windows.update(tab.windowId, { focused: true }, resolve));
+        await new Promise((resolve) => chrome.windows.update(tab.windowId, { focused: true }, () => {
+          void chrome.runtime.lastError;
+          resolve();
+        }));
       }
-      await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, resolve));
+      const activated = await new Promise((resolve) => chrome.tabs.update(tabId, { active: true }, () => {
+        resolve(!chrome.runtime.lastError);
+      }));
+      if (!activated) {
+        this.showMessage('Failed to jump to managed tab', 'error');
+        return;
+      }
 
       this.showMessage('Jumped to managed tab', 'success');
     } catch (e) {
       console.warn('Failed to jump to managed tab:', e);
       this.showMessage('Failed to jump to managed tab', 'error');
-    }
-  }
-
-  async pickManagedTwitchTabId() {
-    try {
-      // Prefer the current active Twitch tab
-      const activeTabs = await new Promise((resolve) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, resolve);
-      });
-      const activeTab = activeTabs?.[0];
-      if (activeTab?.id && isTwitchUrl(activeTab.url || '')) {
-        return activeTab.id;
-      }
-
-      // Otherwise, pick any existing Twitch tab (first match)
-      const twitchTabs = await new Promise((resolve) => {
-        chrome.tabs.query({ url: ['*://twitch.tv/*', '*://*.twitch.tv/*'] }, resolve);
-      });
-      if (twitchTabs?.length) {
-        return twitchTabs[0].id ?? null;
-      }
-    } catch (e) {
-      console.warn('Failed to pick managed Twitch tab:', e);
-    }
-
-    // No Twitch tab found: create one and manage it.
-    try {
-      const created = await new Promise((resolve) => {
-        chrome.tabs.create({ url: 'https://www.twitch.tv/' }, resolve);
-      });
-      return created?.id ?? null;
-    } catch (e) {
-      console.warn('Failed to create Twitch tab:', e);
-      return null;
     }
   }
 
@@ -637,6 +652,8 @@ class PopupManager {
 
     const isLive = stream.isLive || false;
     const notifyOn = stream.notify !== false;
+    const swapOn = isSwapEnabled(stream);
+    item.classList.toggle('paused', !swapOn);
     const data = isLive ? stream.streamData : null;
 
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -669,12 +686,24 @@ class PopupManager {
         ${metaParts.length > 0 ? `<div class="stream-meta">${metaParts.join(' · ')}</div>` : ''}
       </div>
       <div class="stream-actions">
+        <label class="swap-toggle" title="${swapOn ? 'Auto-Swap on for this channel — click to skip it' : 'Skipped by Auto-Swap — click to include it'}">
+          <input type="checkbox" data-action="swap" ${swapOn ? 'checked' : ''}
+            aria-label="Auto-Swap to ${esc(stream.username)}">
+          <span class="swap-slider" aria-hidden="true"></span>
+        </label>
         <button class="action-btn notify-btn ${notifyOn ? '' : 'muted'}" data-action="notify"
           aria-pressed="${notifyOn}"
           title="${notifyOn ? 'Notifications on — click to mute' : 'Notifications muted — click to unmute'}">${bellIcon}</button>
         <button class="action-btn" data-action="remove" title="Remove">×</button>
       </div>
     `;
+
+    // Per-channel Auto-Swap switch
+    const swapInput = item.querySelector('[data-action="swap"]');
+    swapInput.addEventListener('click', (e) => e.stopPropagation());
+    swapInput.addEventListener('change', () => {
+      this.toggleSwapEnabled(stream.username);
+    });
 
     // Notification bell
     item.querySelector('[data-action="notify"]').addEventListener('click', (e) => {
@@ -697,6 +726,22 @@ class PopupManager {
     stream.notify = stream.notify === false;
     await storage.saveStreams(this.streams);
     this.render();
+  }
+
+  async toggleSwapEnabled(username) {
+    const stream = this.streams.find((s) => s.username === username);
+    if (!stream) return;
+    stream.enabled = !isSwapEnabled(stream);
+    await storage.saveStreams(this.streams);
+    this.render();
+    this.updateCurrentStream();
+    this.showMessage(
+      stream.enabled ? `Auto-Swap will include ${username}` : `Auto-Swap will skip ${username}`,
+      'success'
+    );
+    // Switching off the channel being watched should move to the next one
+    // (or fallback) now, not at the next scheduled poll.
+    await this.forcePollAndSwap();
   }
 
   setupDragAndDrop() {
@@ -918,9 +963,14 @@ class PopupManager {
       // is open.
       const displayFields = ['title', 'game_name', 'viewer_count', 'started_at'];
       this.streams.forEach(stream => {
+        // Missing entries had no status check this round (invalid format, or
+        // their request batch failed while another succeeded); keep showing
+        // the last-known state rather than flashing them offline.
+        if (!(stream.username in statuses)) return;
+
         const wasLive = stream.isLive || false;
-        // Treat missing entries (invalid/filtered usernames) as offline too.
-        const data = statuses[stream.username] ?? null;
+        // null (as opposed to missing) means confirmed offline.
+        const data = statuses[stream.username];
         const isLive = data != null;
 
         if (wasLive !== isLive) {
@@ -961,8 +1011,9 @@ class PopupManager {
     const currentStreamDiv = document.getElementById('currentStream');
     const currentInfo = document.getElementById('currentInfo');
 
-    // Find highest priority live stream
-    const liveStream = this.streams.find(s => s.isLive);
+    // Highest-priority live channel Auto-Swap would pick (switched-off
+    // channels are skipped, exactly as the background worker does).
+    const liveStream = pickSwitchTarget(this.streams);
 
     if (liveStream) {
       currentStreamDiv.style.display = 'block';
@@ -985,24 +1036,39 @@ class PopupManager {
     const isEnabled = !!categoryName;
     const toggle = document.getElementById('fallbackEnabledToggle');
     const input = document.getElementById('fallbackCategoryInput');
-    if (toggle) toggle.checked = isEnabled;
-    if (input && input !== document.activeElement) {
+    // While the user is typing a category the toggle is checked but nothing
+    // is saved yet; this refresh runs on every poll and settings event, so
+    // syncing the toggle then would snap it OFF under their cursor.
+    if (toggle && input !== document.activeElement) toggle.checked = isEnabled;
+    // Never blank the input: disabling fallback clears the stored category,
+    // and wiping the field too would force the user to retype it just to
+    // re-enable (the toggle handler saves whatever text is still here).
+    if (input && input !== document.activeElement && categoryName) {
       input.value = categoryName;
     }
   }
 
+  /**
+   * @returns {boolean} true when a save happened; false when the value was
+   *   already persisted (callers skip their "updated" toast then).
+   */
   async saveFallbackCategory(categoryName) {
     const value = String(categoryName || '').trim();
-    const newSettings = {
-      ...this.settings,
-      fallbackCategory: value
-    };
-    await storage.saveSettings(newSettings);
-    this.settings = newSettings;
+    // Enter in the input saves, then the same value's 'change' event fires on
+    // blur and saved again — and every save restarts background polling. Skip
+    // saves that would not change anything.
+    if (value === String(this.settings?.fallbackCategory || '').trim()) {
+      this.updateCategoryFallbackWidget();
+      return false;
+    }
+    // Save only this field (see the Auto-Swap toggle handler for why).
+    await storage.saveSettings({ fallbackCategory: value });
+    this.settings = { ...this.settings, fallbackCategory: value };
     this.updateCategoryFallbackWidget();
 
     // If fallback is enabled, ensure we force a background poll so the user sees it work quickly.
     await this.forcePollAndSwap();
+    return true;
   }
 
   scheduleCategorySuggestions(query) {
@@ -1070,8 +1136,14 @@ class PopupManager {
     messageDiv.textContent = text;
     messageDiv.className = `status-message show ${type}`;
 
-    setTimeout(() => {
+    // The hide timer from an earlier message must not dismiss this one early
+    // (same fix as showSaveStatus in options.js).
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
+    }
+    this.messageTimer = setTimeout(() => {
       messageDiv.classList.remove('show');
+      this.messageTimer = null;
     }, 3000);
   }
 
@@ -1081,6 +1153,12 @@ class PopupManager {
     }
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
+    }
+    if (this.messageTimer) {
+      clearTimeout(this.messageTimer);
+    }
+    if (this.categorySuggestTimer) {
+      clearTimeout(this.categorySuggestTimer);
     }
   }
 }

@@ -84,8 +84,14 @@ for (const f of rootFiles) {
 
 copyDir(path.join(repoRoot, 'utils'), path.join(stageDir, 'utils'));
 copyDir(path.join(repoRoot, 'content'), path.join(stageDir, 'content'));
-copyDir(path.join(repoRoot, 'icons'), path.join(stageDir, 'icons'));
 copyDir(path.join(repoRoot, 'themes'), path.join(stageDir, 'themes'));
+
+// Icons: copy only the PNGs the extension references. icons/ also holds dev
+// tooling (generate-icons.html, icon-source.svg) that must not ship in the
+// Web Store ZIP.
+for (const f of ['icon-16.png', 'icon-48.png', 'icon-128.png', 'icon-512.png']) {
+  copyFile(path.join(repoRoot, 'icons', f), path.join(stageDir, 'icons', f));
+}
 
 // Produce a Web Store ready ZIP. (Docs are intentionally excluded.)
 const zipName = `twitch-stream-swapper-${version}.zip`;

@@ -15,7 +15,12 @@ for (const [jsFile, htmlFile] of pairs) {
     [...js.matchAll(/getElementById\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
       .concat([...js.matchAll(/querySelector(?:All)?\(\s*['"]#([A-Za-z0-9_-]+)['"]/g)].map((m) => m[1])),
   );
-  const missing = [...ids].filter((id) => !html.includes(`id="${id}"`));
+  // Anchor on a real id attribute: a bare substring test also matches
+  // data-testid="x" / aria-labelledby-style attributes ending in id=, which
+  // would let the gate pass while getElementById() returns null. (\b is not
+  // enough — the '-' in data-testid creates a word boundary before 'id'.)
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const missing = [...ids].filter((id) => !new RegExp(`[\\s<]id="${escape(id)}"`).test(html));
   if (missing.length > 0) {
     console.error(`${htmlFile} missing IDs used by ${jsFile}:`, missing.join(', '));
     failed = true;

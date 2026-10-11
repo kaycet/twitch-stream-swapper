@@ -1,3 +1,5 @@
+import { pickSwitchTarget } from './stream-target.js';
+
 /**
  * Toolbar badge presentation (pure, unit-tested).
  *
@@ -14,6 +16,24 @@
  * @param {string|null} [args.target] - Username Auto-Swap would watch, if any
  * @returns {{text: string, color: string, title: string}}
  */
+/**
+ * Derive the badge's live count and target from a stored stream list.
+ *
+ * Used when the badge is repainted outside a poll (settings changes, worker
+ * init): the persisted isLive flags from the last poll are still accurate,
+ * while painting a hardcoded 0 blanked the live count until the next poll.
+ *
+ * @param {Array<{username?: string, priority?: number, isLive?: boolean}>} streams
+ * @returns {{liveCount: number, target: string|null}}
+ */
+export function badgeStateFromStreams(streams) {
+  if (!Array.isArray(streams)) return { liveCount: 0, target: null };
+  const live = streams.filter((s) => s?.isLive && s?.username);
+  // The count includes switched-off channels (they are still live); the
+  // target is only ever one Auto-Swap would actually pick.
+  return { liveCount: live.length, target: pickSwitchTarget(live)?.username || null };
+}
+
 export function computeBadge({ enabled, liveCount = 0, target = null } = {}) {
   const on = !!enabled;
   const count = Number(liveCount) || 0;

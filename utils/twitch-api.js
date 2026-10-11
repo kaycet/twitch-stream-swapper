@@ -12,8 +12,6 @@ class TwitchAPI {
     this.cache = new Map();
     this.cacheTTL = 30000; // 30 seconds
     this.MAX_CACHE_ENTRIES = 200;
-    this.rateLimitQueue = [];
-    this.rateLimitDelay = 0;
     this.requestCount = 0;
     this.requestWindow = Date.now();
     this.MAX_REQUESTS_PER_MINUTE = 800;
@@ -250,7 +248,11 @@ class TwitchAPI {
   /**
    * Check if multiple streams are live (batch request)
    * @param {string[]} usernames - Array of usernames (up to 100)
-   * @returns {Promise<Object>} - Map of username -> stream data or null
+   * @returns {Promise<Object>} - Map of username -> stream data (live) or
+   *   null (confirmed offline). Usernames whose status could not be checked
+   *   (invalid format, or their batch failed while another succeeded) are
+   *   omitted entirely so callers can keep last-known state instead of
+   *   treating them as freshly offline.
    * @throws {Error} - If there's a critical error that should be handled by caller
    */
   async checkStreamsStatus(usernames) {
@@ -258,8 +260,10 @@ class TwitchAPI {
       return {};
     }
 
-    // Validate usernames
-    const validUsernames = usernames.filter(u => u && /^[a-zA-Z0-9_]{4,25}$/.test(u));
+    // Validate usernames. Minimum is 3, not 4: new Twitch accounts need 4+
+    // characters, but legacy 3-character logins still exist — filtering them
+    // out here made those channels permanently "offline".
+    const validUsernames = usernames.filter(u => u && /^[a-zA-Z0-9_]{3,25}$/.test(u));
     if (validUsernames.length === 0) {
       throw new Error('Invalid username format');
     }
@@ -300,10 +304,11 @@ class TwitchAPI {
         console.error('Error checking stream status:', error);
         lastError = error;
 
-        // Mark all in batch as null on error
-        batch.forEach(username => {
-          results[username] = null;
-        });
+        // Leave this batch's usernames out of the results instead of marking
+        // them null: null means "confirmed offline", and reporting offline
+        // for streams we simply could not check resets the callers' wasLive
+        // tracking — re-firing "went live" notifications for the whole batch
+        // once the network recovers.
       }
     }
 
@@ -322,16 +327,6 @@ class TwitchAPI {
     }
 
     return results;
-  }
-
-  /**
-   * Check if a single stream is live
-   * @param {string} username - Username to check
-   * @returns {Promise<Object|null>} - Stream data or null if offline
-   */
-  async checkStreamStatus(username) {
-    const results = await this.checkStreamsStatus([username]);
-    return results[username] || null;
   }
 
   /**
@@ -438,16 +433,6 @@ class TwitchAPI {
    */
   clearCache() {
     this.cache.clear();
-  }
-
-  /**
-   * Get cache stats (for debugging)
-   */
-  getCacheStats() {
-    return {
-      size: this.cache.size,
-      requestsThisMinute: this.requestCount
-    };
   }
 }
 
