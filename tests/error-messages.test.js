@@ -55,7 +55,7 @@ describe('ErrorMessageManager.getErrorMessage', () => {
 
   it('classifies invalid username errors correctly', () => {
     const info = get(new Error('Invalid username format'));
-    expect(info.message).toMatch(/twitch usernames must be 4-25/i);
+    expect(info.message).toMatch(/twitch usernames must be 3-25/i);
     expect(info.message).not.toMatch(/not configured/i);
   });
 
