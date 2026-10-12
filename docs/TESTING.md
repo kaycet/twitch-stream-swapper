@@ -56,26 +56,27 @@ Before starting testing, ensure you have:
 ### Test Case 1.2: Twitch Client ID Configuration
 
 **Steps:**
-1. Open extension options page
-2. Enter a valid Twitch Client ID in the "Twitch Client ID" field
-3. Click "Save Settings"
-4. Wait for save confirmation
+1. Open extension options page and expand the "Advanced" section
+2. Enable "Override built-in Twitch Client ID"
+3. Enter a valid Twitch Client ID in the "Twitch Client ID" field
+4. Click "Apply Advanced Settings" and confirm the dialog
+5. Wait for the probe against the Twitch API to finish
 
 **Expected Results:**
-- [ ] Client ID field accepts text input
-- [ ] "Settings saved successfully!" message appears (green)
+- [ ] Client ID field accepts text input (disabled until the override toggle is on)
+- [ ] "Advanced settings applied" message appears (green)
 - [ ] No error messages displayed
 - [ ] Settings persist after page reload
 
 **Verification:**
-- Reload options page and verify Client ID is still present
+- Reload options page and verify the override toggle is on and the Client ID is still present
 - Check browser console for API initialization messages
 
 **Negative Test:**
 - [ ] Enter an invalid Client ID (e.g., "test123")
-- [ ] Click "Save Settings"
-- [ ] Verify error message: "Invalid Twitch Client ID. Please check your settings."
-- [ ] Verify settings are NOT saved
+- [ ] Click "Apply Advanced Settings" and confirm the dialog
+- [ ] Verify error message: "Invalid Twitch Client ID (advanced setting)."
+- [ ] Verify settings are NOT saved (reload: the previous Client ID state is unchanged)
 
 ---
 
@@ -85,7 +86,7 @@ Before starting testing, ensure you have:
 
 **Steps:**
 1. Open extension popup
-2. Enter a valid Twitch username (4-25 characters, alphanumeric/underscores/hyphens)
+2. Enter a valid Twitch username (3-25 characters: letters, numbers, underscores)
 3. Click "Add" button or press Enter
 4. Observe the stream list
 
@@ -108,7 +109,7 @@ Before starting testing, ensure you have:
 
 **Steps:**
 1. Open extension popup
-2. Enter an invalid username (e.g., "ab", "user@name", "user name", "user.name")
+2. Enter an invalid username (e.g., "ab", "user@name", "user name", "user.name", "user-name")
 3. Click "Add" button
 
 **Expected Results:**
@@ -119,7 +120,7 @@ Before starting testing, ensure you have:
 
 **Verification:**
 - Try multiple invalid formats:
-  - [ ] Too short (< 4 characters)
+  - [ ] Too short (< 3 characters — legacy 3-character logins are valid)
   - [ ] Too long (> 25 characters)
   - [ ] Contains special characters (@, #, $, etc.)
   - [ ] Contains spaces

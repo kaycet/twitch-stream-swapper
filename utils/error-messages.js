@@ -107,7 +107,7 @@ class ErrorMessageManager {
          (errorString.includes('format') || errorString.includes('not found') ||
           errorString.includes('does not exist'))))) {
       return {
-        message: 'Invalid username. Twitch usernames must be 4-25 characters (letters, numbers, underscores).',
+        message: 'Invalid username. Twitch usernames must be 3-25 characters (letters, numbers, underscores).',
         type: 'error',
         action: 'Check the username spelling and ensure it follows Twitch username rules.'
       };
