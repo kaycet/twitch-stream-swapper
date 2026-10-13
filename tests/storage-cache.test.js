@@ -167,6 +167,42 @@ describe('StorageManager cache invalidation', () => {
     await storage.saveSettings({ theme: 'midnight' });
     expect(store.get('settings')?.theme).toBe('midnight');
   });
+
+  it('serializes overlapping saveSettings calls so neither reverts the other', async () => {
+    // saveSettings is read-merge-write on the single 'settings' key. Real
+    // chrome.storage IPC is task-async — a get issued before an earlier set
+    // resolves sees the old value — which the instant mocks above hide, so
+    // defer both by a macrotask here.
+    await chrome.storage.local.set({ settings: { premiumStatus: false, notificationsEnabled: false } });
+    const defer = (fn) => new Promise((resolve) => setTimeout(() => resolve(fn()), 0));
+    const realGet = chrome.storage.local.get.getMockImplementation();
+    const realSet = chrome.storage.local.set.getMockImplementation();
+    chrome.storage.local.get.mockImplementation((keys) => defer(() => realGet(keys)));
+    chrome.storage.local.set.mockImplementation((items) => defer(() => realSet(items)));
+
+    try {
+      // A: the Options page's Supporter toggle saving its one field. B: a
+      // general autosave whose debounce timer expired during A's confirm()
+      // dialog — it starts in the next task, before A's read has resolved,
+      // and premiumStatus is not among the fields it writes. Unserialized,
+      // B's merge base predates A's write, and B's later write silently
+      // reverted premiumStatus to false.
+      const a = storage.saveSettings({ premiumStatus: true });
+      let b;
+      queueMicrotask(() => {
+        b = storage.saveSettings({ notificationsEnabled: true });
+      });
+      await a;
+      await b;
+
+      const settings = store.get('settings');
+      expect(settings.premiumStatus).toBe(true);
+      expect(settings.notificationsEnabled).toBe(true);
+    } finally {
+      chrome.storage.local.get.mockImplementation(realGet);
+      chrome.storage.local.set.mockImplementation(realSet);
+    }
+  });
 });
 
 

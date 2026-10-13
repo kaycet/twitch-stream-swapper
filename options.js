@@ -33,7 +33,7 @@ class OptionsManager {
 
   setupEventListeners() {
     // Honor system supporter toggle (no verification)
-    document.getElementById('premiumStatus').addEventListener('change', (e) => {
+    document.getElementById('premiumStatus').addEventListener('change', async (e) => {
       const checked = !!e.target.checked;
       if (checked) {
         const ok = confirm('Enable Supporter Features?\n\nThis is an honor system toggle. If you supported development, thanks ❤️');
@@ -42,13 +42,18 @@ class OptionsManager {
           return;
         }
       }
-      this.settings.premiumStatus = checked;
-      // Save only this field: saveSettings merges over the stored settings,
-      // while saving the whole (possibly stale) this.settings clobbered
-      // changes made elsewhere while this page was open — e.g. enabling
-      // Auto-Swap in the popup, then toggling Supporter here, silently
-      // turned Auto-Swap back off.
-      storage.saveSettings({ premiumStatus: checked }).then(() => {
+      try {
+        // The confirm() above blocks long enough for a pending general
+        // autosave's 600ms timer to expire; run it to completion first (see
+        // drainPendingAutoSave) so its write cannot land after this one.
+        await this.drainPendingAutoSave();
+        this.settings.premiumStatus = checked;
+        // Save only this field: saveSettings merges over the stored settings,
+        // while saving the whole (possibly stale) this.settings clobbered
+        // changes made elsewhere while this page was open — e.g. enabling
+        // Auto-Swap in the popup, then toggling Supporter here, silently
+        // turned Auto-Swap back off.
+        await storage.saveSettings({ premiumStatus: checked });
         this.updatePremiumFeatures();
         // Premium gates the themes: turning supporter features off must also
         // drop an applied premium/custom theme, not leave it painted until
@@ -63,7 +68,15 @@ class OptionsManager {
         this.updateCustomThemeVisibility();
         if (this.settings.premiumStatus) this.loadAnalytics();
         this.showSaveStatus('Saved', 'success');
-      });
+      } catch (error) {
+        // A failed save used to be an unhandled rejection: no error status,
+        // and the checkbox + this.settings left claiming the new state.
+        console.error('Error saving supporter status:', error);
+        this.settings.premiumStatus = !checked;
+        e.target.checked = !checked;
+        const errorInfo = ErrorMessageManager.getErrorMessage(error, 'saveSettings');
+        this.showSaveStatus(ErrorMessageManager.formatMessage(errorInfo), 'error');
+      }
     });
 
     // Clear analytics
@@ -199,9 +212,23 @@ class OptionsManager {
     this.settings = { ...this.settings, ...newSettings };
     if (changed.length === 0) return;
 
+    // Only a text-entry control has an "in-progress edit" worth protecting
+    // from an external re-sync. A clicked checkbox (or select) stays the
+    // document's activeElement indefinitely, so skipping it here desynced
+    // the form for good: close the managed Twitch tab and the background
+    // writes redirectEnabled:false, but the still-focused Auto-Switching
+    // checkbox stayed checked — and the next unrelated autosave read it
+    // back, re-enabling Auto-Swap and opening a Twitch tab the user never
+    // asked for.
+    const isTextEntry = (el) => {
+      const type = String(el.type || '').toLowerCase();
+      return type === 'text' || type === 'time' || type === 'search'
+        || type === 'number' || type === 'url' || type === 'email' || type === 'textarea';
+    };
     const sync = (id, apply) => {
       const el = document.getElementById(id);
-      if (!el || el === document.activeElement) return;
+      if (!el) return;
+      if (el === document.activeElement && isTextEntry(el)) return;
       apply(el);
     };
 
@@ -320,6 +347,23 @@ class OptionsManager {
       this.autoSaveTimer = null;
       this.saveGeneralSettings();
     }, this.AUTO_SAVE_DELAY_MS);
+  }
+
+  /**
+   * Run a pending debounced general autosave to completion NOW, before one
+   * of the direct-save paths (Supporter toggle, Apply Custom Theme, Apply
+   * Advanced) writes. All of them sit behind a confirm() dialog that blocks
+   * JS long enough for the 600ms timer to expire, so the queued autosave
+   * callback used to run mid-direct-save — and whichever write landed last
+   * silently reverted the other's fields (the Supporter toggle "saved" and
+   * then flipped back; an applied custom theme flashed on and reverted to
+   * the previous theme).
+   */
+  async drainPendingAutoSave() {
+    if (!this.autoSaveTimer) return;
+    clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = null;
+    await this.saveGeneralSettings();
   }
 
   /**
@@ -620,6 +664,10 @@ class OptionsManager {
     try {
       this.showSaveStatus('Applying advanced settings…', 'loading');
 
+      // The confirm() above blocks long enough for a pending general
+      // autosave's timer to expire; run it to completion before this write.
+      await this.drainPendingAutoSave();
+
       // Sanity check the override (developer-only). getCategoryId swallows
       // API errors and returns null, so awaiting it alone could never fail —
       // any invalid Client ID "applied" successfully and silently broke API
@@ -680,6 +728,10 @@ class OptionsManager {
 
     try {
       this.showSaveStatus('Applying custom theme…', 'loading');
+      // Run a pending general autosave first: its queued callback still sees
+      // customThemeDirty, so it writes theme = the OLD saved theme — landing
+      // after this save, it visibly reverted the just-applied custom theme.
+      await this.drainPendingAutoSave();
       const newSettings = { theme: 'custom', customTheme: newTheme };
       await storage.saveSettings(newSettings);
       this.settings = { ...this.settings, ...newSettings };
