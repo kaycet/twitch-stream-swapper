@@ -66,4 +66,27 @@ describe('TwitchAPI username validation', () => {
     vi.stubGlobal('fetch', vi.fn(async () => okResponse()));
     await expect(twitchAPI.checkStreamsStatus(['ab', 'x'])).rejects.toThrow('Invalid username format');
   });
+
+  it('reports channels named after Object.prototype members as offline', async () => {
+    // Both are valid Twitch login formats. On a plain {} lookup map they hit
+    // inherited prototype members — truthy — so these channels came back
+    // permanently "live" with a function/object as their streamData:
+    // notifying, pinning auto-swap onto an offline page, and blocking
+    // category fallback forever. '__proto__' could not even be stored as a
+    // key, and callers' `username in statuses` checks walked the prototype
+    // chain too.
+    const fetchMock = vi.fn(async () => okResponse()); // nobody live
+    vi.stubGlobal('fetch', fetchMock);
+
+    const results = await twitchAPI.checkStreamsStatus(['constructor', '__proto__']);
+
+    expect(results.constructor).toBe(null);
+    expect(results['__proto__']).toBe(null);
+    expect('constructor' in results).toBe(true); // own property: actually checked
+    expect('__proto__' in results).toBe(true);
+
+    const url = fetchMock.mock.calls[0][0];
+    expect(url).toContain('user_login=constructor');
+    expect(url).toContain('user_login=__proto__');
+  });
 });
