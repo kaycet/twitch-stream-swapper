@@ -256,8 +256,17 @@ class TwitchAPI {
    * @throws {Error} - If there's a critical error that should be handled by caller
    */
   async checkStreamsStatus(usernames) {
+    // Null-prototype maps throughout: usernames are attacker-ish input for a
+    // plain object. 'constructor' and '__proto__' are valid Twitch login
+    // formats, and on a {} lookup map they hit inherited Object.prototype
+    // members — truthy, so those channels came back permanently "live" with
+    // a function as streamData (notifying, pinning auto-swap on an offline
+    // page, and blocking category fallback), and '__proto__' could not even
+    // be written as a key. Callers' `username in statuses` checks also rely
+    // on this: with a prototype chain they were true for names never checked.
+    const results = Object.create(null);
     if (!usernames || usernames.length === 0) {
-      return {};
+      return results;
     }
 
     // Validate usernames. Minimum is 3, not 4: new Twitch accounts need 4+
@@ -274,7 +283,6 @@ class TwitchAPI {
       batches.push(validUsernames.slice(i, i + 100));
     }
 
-    const results = {};
     let successCount = 0;
     let lastError = null;
 
@@ -288,7 +296,7 @@ class TwitchAPI {
         const data = await this._request(`/streams?${loginParams}`, {});
         
         // Create map of live streams
-        const liveStreams = {};
+        const liveStreams = Object.create(null);
         if (data.data) {
           data.data.forEach(stream => {
             liveStreams[stream.user_login.toLowerCase()] = stream;

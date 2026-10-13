@@ -209,6 +209,103 @@ describe('background poll loop', () => {
     expect(wroteStreams).toBe(false);
     setSpy.mockRestore();
   });
+
+  it('credits viewing time only while Auto-Swap is parked on the live channel', async () => {
+    // Supporter with Auto-Swap OFF (the default): a live channel used to
+    // accrue up to a checkInterval of "viewing time" on every poll, with no
+    // Twitch tab open at all — hours per day of fabricated watching for a
+    // channel the user never opened.
+    await harness.chrome.storage.local.set({
+      settings: { ...harness.store.get('settings'), premiumStatus: true },
+    });
+    live = true;
+    await forcePoll();
+
+    expect((await storage.getAnalytics()).lastViewingUpdate).toBeUndefined();
+
+    // Auto-Swap on with the managed tab actually showing the channel:
+    // crediting starts.
+    harness.chrome.tabs.get = (id, cb) =>
+      cb({ id, url: 'https://www.twitch.tv/alpha', windowId: 1, status: 'complete' });
+    await harness.chrome.storage.local.set({
+      settings: { ...harness.store.get('settings'), redirectEnabled: true, managedTwitchTabId: 7 },
+    });
+    await forcePoll();
+
+    expect((await storage.getAnalytics()).lastViewingUpdate).toBeGreaterThan(0);
+
+    // Let the debounced analytics flush land inside this test, not the next.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
+});
+
+describe('background init: new browser session', () => {
+  let harness;
+
+  async function boot({ sessionAlive }) {
+    vi.resetModules();
+    harness = makeHarness();
+
+    // chrome.storage.session is cleared when the browser exits, so an absent
+    // marker means this worker start is the first one of a new session.
+    const sessionStore = new Map();
+    if (sessionAlive) sessionStore.set('tsrSessionAlive', true);
+    harness.chrome.storage.session = {
+      async get(keys) {
+        const out = {};
+        for (const key of (Array.isArray(keys) ? keys : [keys])) {
+          if (sessionStore.has(key)) out[key] = sessionStore.get(key);
+        }
+        return out;
+      },
+      async set(items) {
+        for (const [key, value] of Object.entries(items)) sessionStore.set(key, value);
+      },
+    };
+    globalThis.chrome = harness.chrome;
+
+    harness.store.set('settings', {
+      clientId: 'test-client-id',
+      redirectEnabled: true,
+      promptBeforeSwitch: false,
+      notificationsEnabled: false,
+      premiumStatus: false,
+      checkInterval: 60000,
+      managedTwitchTabId: 23,
+      fallbackCategory: '',
+      quietHours: { enabled: false },
+    });
+    harness.store.set('streams', []);
+
+    const api = (await import('../utils/twitch-api.js')).default;
+    api.initialize = async () => {};
+    api.checkStreamsStatus = async () => ({});
+
+    await import('../background.js');
+    for (let i = 0; i < 80; i += 1) await Promise.resolve();
+  }
+
+  afterEach(() => {
+    delete globalThis.chrome;
+  });
+
+  it('unbinds the managed tab and disables Auto-Swap in a fresh browser session', async () => {
+    // Tab ids are session-scoped, but the binding is persisted: after a
+    // restart with session restore, the stored id routinely names an
+    // unrelated restored tab, and if that tab is any Twitch page the poll
+    // loop would silently commandeer it.
+    await boot({ sessionAlive: false });
+
+    expect(harness.store.get('settings').redirectEnabled).toBe(false);
+    expect(harness.store.get('settings').managedTwitchTabId).toBe(null);
+  });
+
+  it('keeps the binding across service-worker restarts within one session', async () => {
+    await boot({ sessionAlive: true });
+
+    expect(harness.store.get('settings').redirectEnabled).toBe(true);
+    expect(harness.store.get('settings').managedTwitchTabId).toBe(23);
+  });
 });
 
 describe('background poll loop: per-channel Auto-Swap toggle', () => {

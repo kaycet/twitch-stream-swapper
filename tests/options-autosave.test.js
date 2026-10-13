@@ -327,4 +327,113 @@ describe('Options general autosave', () => {
     // The inert, self-healing state the skip is supposed to leave behind.
     expect(store.get('settings').managedTwitchTabId).toBe(null);
   });
+
+  it('re-syncs a focused checkbox when another context disables Auto-Swap', async () => {
+    await boot(baseSettings({ redirectEnabled: true, managedTwitchTabId: 42 }));
+
+    // A clicked checkbox stays the document's activeElement indefinitely —
+    // unlike a text input, focus does not mean "edit in progress".
+    const checkbox = dom.get('redirectEnabled');
+    checkbox.checked = true;
+    dom.document.activeElement = checkbox;
+
+    // The background worker disables Auto-Swap when the managed tab closes.
+    const stored = clone(store.get('settings'));
+    await globalThis.chrome.storage.local.set({
+      settings: { ...stored, redirectEnabled: false, managedTwitchTabId: null },
+    });
+    await settle();
+
+    // The focused-element skip used to leave the checkbox checked for good…
+    expect(checkbox.checked).toBe(false);
+
+    // …and the next unrelated autosave then read the stale checkbox back,
+    // re-enabling Auto-Swap and opening a Twitch tab the user never asked
+    // for.
+    dom.get('checkInterval').value = '120000';
+    dom.get('checkInterval').fire('change');
+    await debounce();
+
+    expect(store.get('settings').redirectEnabled).toBe(false);
+    expect(globalThis.chrome.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('leaves a focused text input alone when settings change externally', async () => {
+    await boot(baseSettings({ fallbackCategory: 'Just Chatting' }));
+
+    // An in-progress edit in a text control is the case the focused-element
+    // skip exists for; it must survive the checkbox fix.
+    const input = dom.get('fallbackCategory');
+    input.type = 'text';
+    input.value = 'Scor';
+    dom.document.activeElement = input;
+
+    const stored = clone(store.get('settings'));
+    await globalThis.chrome.storage.local.set({
+      settings: { ...stored, fallbackCategory: 'Music' },
+    });
+    await settle();
+
+    expect(input.value).toBe('Scor');
+    // The sibling checkbox is not focused, so it re-syncs as usual.
+    expect(dom.get('fallbackEnabled').checked).toBe(true);
+  });
+
+  it('reverts the Supporter toggle and reports when its save fails', async () => {
+    await boot(baseSettings());
+
+    const checkbox = dom.get('premiumStatus');
+    checkbox.checked = true;
+
+    const realSet = globalThis.chrome.storage.local.set;
+    globalThis.chrome.storage.local.set = async () => {
+      throw new Error('storage write failed');
+    };
+    checkbox.fire('change');
+    await settle();
+    globalThis.chrome.storage.local.set = realSet;
+
+    // The failed save used to be an unhandled rejection: no error status,
+    // and the checkbox + this.settings left claiming Supporter was enabled.
+    expect(checkbox.checked).toBe(false);
+    expect(store.get('settings').premiumStatus).toBe(false);
+    expect(dom.get('saveStatus').className).toContain('error');
+  });
+
+  it('runs a pending general autosave before Apply Custom Theme, not after it', async () => {
+    await boot(baseSettings({ premiumStatus: true, theme: 'default', customTheme: {} }));
+
+    const colors = {
+      customAccentHex: '#9147FF',
+      customBgHex: '#0E0E10',
+      customPanelHex: '#18181B',
+      customTextHex: '#EFEFF1',
+      customBorderHex: '#2D2D35',
+      customMutedHex: '#ADADB8',
+    };
+    for (const [id, value] of Object.entries(colors)) dom.get(id).value = value;
+    dom.get('theme').value = 'custom';
+    dom.get('theme').fire('change'); // marks the custom theme dirty; no autosave
+
+    // Slow storage, as real chrome IPC can be: each write takes longer than
+    // the 600ms debounce, so an un-drained autosave timer fires mid-apply —
+    // while customThemeDirty is still true — and writes the OLD theme after
+    // the apply's write, visibly reverting the just-applied custom theme.
+    const realSet = globalThis.chrome.storage.local.set;
+    globalThis.chrome.storage.local.set = (items) =>
+      new Promise((resolve) => setTimeout(() => resolve(realSet(items)), 650));
+
+    dom.get('notificationsEnabled').checked = false;
+    dom.get('notificationsEnabled').fire('change'); // arms the autosave timer
+    dom.get('customThemeApplyBtn').fire('click');
+
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    await settle();
+    globalThis.chrome.storage.local.set = realSet;
+
+    expect(store.get('settings').theme).toBe('custom');
+    expect(store.get('settings').customTheme.accent).toBe('#9147FF');
+    // The drained autosave still saved its own field.
+    expect(store.get('settings').notificationsEnabled).toBe(false);
+  });
 });

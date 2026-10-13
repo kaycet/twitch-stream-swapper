@@ -4,6 +4,7 @@
  */
 
 import { TWITCH_CLIENT_ID } from './config.js';
+import { serializeAsync } from './serialize-async.js';
 
 class StorageManager {
   constructor() {
@@ -11,6 +12,16 @@ class StorageManager {
     this.saveQueue = new Map();
     this.saveTimeout = null;
     this.DEBOUNCE_DELAY = 300; // ms
+
+    // Serialized: saveSettings is read-merge-write on the single 'settings'
+    // key, so two overlapping calls in one context read the same merge base
+    // and the later write silently reverts the earlier call's fields — e.g.
+    // the Options page's Supporter toggle racing a pending general autosave
+    // whose timer expired during the confirm() dialog. Queuing the second
+    // call until the first one's write has landed makes its read see that
+    // write. (Cross-context races are different: they are handled by the
+    // fresh read below plus storage.onChanged cache invalidation.)
+    this.saveSettings = serializeAsync(this.saveSettings.bind(this));
 
     // Each extension context (background worker, popup, options, content
     // script) has its own StorageManager, and set()/remove() only invalidate

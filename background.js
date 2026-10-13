@@ -58,6 +58,36 @@ class BackgroundWorker {
     // Load settings
     this.settings = await storage.getSettings();
 
+    // Drop the managed-tab binding when this is a NEW browser session. Tab
+    // ids are session-scoped, but the binding is persisted in durable
+    // storage: with session restore, the stored id routinely names an
+    // arbitrary unrelated tab in the new session (ids come from the same
+    // small sequential range), and if that tab is any Twitch page, auto-swap
+    // and category fallback silently commandeer it — the "exists + is a
+    // Twitch URL" checks cannot tell it from the tab the user actually
+    // bound. The bound tab itself is gone with the old session either way,
+    // so treat a restart like the managed tab closing: unbind and switch
+    // off. Detected via a chrome.storage.session marker (cleared when the
+    // browser exits) rather than runtime.onStartup, which fires only after
+    // init has already started polling — too late to stop the first poll
+    // from redirecting a collided tab.
+    if (chrome.storage?.session?.get) {
+      try {
+        const { tsrSessionAlive } = await chrome.storage.session.get(['tsrSessionAlive']);
+        if (!tsrSessionAlive) {
+          await chrome.storage.session.set({ tsrSessionAlive: true });
+          if (this.settings.managedTwitchTabId != null || this.settings.redirectEnabled) {
+            const newSettings = { ...this.settings, redirectEnabled: false, managedTwitchTabId: null };
+            await storage.saveSettings(newSettings);
+            this.settings = newSettings;
+          }
+        }
+      } catch (e) {
+        // Non-fatal: worst case is the pre-existing behavior.
+        console.warn('Failed to check session marker:', e);
+      }
+    }
+
     // Load runtime state (non-critical, used for UX + avoiding constant fallback rerolls)
     const persistedRuntime = await storage.get('runtime');
     if (persistedRuntime && typeof persistedRuntime === 'object') {
@@ -669,6 +699,16 @@ class BackgroundWorker {
   async updateAnalytics(liveStream) {
     if (!liveStream) return;
 
+    // Viewing time means "time Auto-Swap had the managed tab parked on this
+    // channel". It used to be credited whenever the channel was merely live:
+    // a supporter with Auto-Swap off accrued ~a minute of fabricated
+    // watching per poll, hours per day, for channels they never opened —
+    // exactly the inflation viewingCreditSeconds exists to prevent.
+    // currentWatchingStream is what this poll's shouldSwitchToStream /
+    // switchToStream read from (or wrote to) the managed tab.
+    if (!this.settings?.redirectEnabled) return;
+    if (this.currentWatchingStream !== liveStream.username) return;
+
     const analytics = await storage.getAnalytics();
     const now = Date.now();
 
@@ -828,7 +868,9 @@ if (globalThis.chrome?.idle?.onStateChanged) {
   });
 }
 
-// Browser restart: re-establish polling.
+// Browser restart: re-establish polling. (The stale managed-tab binding a
+// restart leaves behind is handled inside _init, where it can run before the
+// first poll — this listener fires too late for that.)
 chrome.runtime.onStartup.addListener(() => {
   worker.init().catch((e) => console.error('Startup initialization failed:', e));
 });
