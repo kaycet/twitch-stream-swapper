@@ -470,14 +470,17 @@ class PopupManager {
 
     this.streams.push(newStream);
     await storage.saveStreams(this.streams);
-    await this.forcePollAndSwap();
-    
+
     input.value = '';
     this.render();
     this.showMessage(`Added ${username}`, 'success');
-    
+
     // Check status immediately
     this.checkStreamStatuses();
+    // Kick the background poll after the UI feedback above: the background
+    // only responds once the whole forced poll (with retry backoff) is done,
+    // so awaiting it first froze the popup on a flaky network.
+    await this.forcePollAndSwap();
   }
 
   async removeStream(username) {
@@ -489,9 +492,11 @@ class PopupManager {
     });
 
     await storage.saveStreams(this.streams);
-    await this.forcePollAndSwap();
     this.render();
     this.showMessage('Stream removed', 'success');
+    // After the UI feedback: the forced poll blocks on the background's full
+    // network round-trip (see addStream).
+    await this.forcePollAndSwap();
   }
 
   render() {
@@ -927,10 +932,12 @@ class PopupManager {
 
     // Save immediately (no debounce for reordering)
     await storage.saveStreams(this.streams);
-    await this.forcePollAndSwap();
-    
-    // Re-render to update UI
+
+    // Re-render first: HTML5 drag-and-drop doesn't move DOM nodes, so until
+    // render() runs the list still shows the old order. The forced poll waits
+    // for the background's full network round-trip and must not delay that.
     this.render();
+    await this.forcePollAndSwap();
   }
 
   async checkStreamStatuses() {
@@ -1066,8 +1073,11 @@ class PopupManager {
     this.settings = { ...this.settings, fallbackCategory: value };
     this.updateCategoryFallbackWidget();
 
-    // If fallback is enabled, ensure we force a background poll so the user sees it work quickly.
-    await this.forcePollAndSwap();
+    // If fallback is enabled, ensure we force a background poll so the user
+    // sees it work quickly. Fire-and-forget (it catches its own errors): the
+    // background only responds once the whole forced poll is done, and the
+    // caller's "updated" toast must not wait on that network round-trip.
+    void this.forcePollAndSwap();
     return true;
   }
 
