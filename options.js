@@ -63,6 +63,13 @@ class OptionsManager {
         this.updateCustomThemeVisibility();
         if (this.settings.premiumStatus) this.loadAnalytics();
         this.showSaveStatus('Saved', 'success');
+      }).catch((error) => {
+        // Revert the optimistic flip: leaving this.settings ahead of storage
+        // would also skew the diff base used by applyExternalSettingsChange.
+        this.settings.premiumStatus = !checked;
+        e.target.checked = !checked;
+        console.error('Failed to save supporter status:', error);
+        this.showSaveStatus('Failed to save', 'error');
       });
     });
 
