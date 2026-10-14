@@ -14,6 +14,7 @@
     "https://api.twitch.tv/*",
     "https://twitch.tv/*",
     "https://*.twitch.tv/*",
+    "https://static-cdn.jtvnw.net/*",
     "https://tsr-token-broker.com/*"
   ],
   "background": {

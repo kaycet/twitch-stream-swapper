@@ -28,7 +28,6 @@ import {
 
 class BackgroundWorker {
   constructor() {
-    this.currentWatchingStream = null;
     this.lastPollTime = 0;
     this.idleState = 'active';
     this.settings = null;
@@ -204,12 +203,6 @@ class BackgroundWorker {
   }
 
   async _pollStreams() {
-    // Ensure modules are loaded
-    if (!storage || !twitchAPI) {
-      console.warn('Modules not loaded yet, skipping poll');
-      return;
-    }
-
     // Prevent concurrent polls
     const now = Date.now();
     if (now - this.lastPollTime < 5000) {
@@ -389,7 +382,6 @@ class BackgroundWorker {
         await this.promptBeforeSwitch(liveStream);
       } else {
         await this.switchToStream(liveStream);
-        this.currentWatchingStream = liveStream.username;
       }
     }
   }
@@ -450,7 +442,6 @@ class BackgroundWorker {
 
     if (plan.action === 'switch') {
       await this.switchToStream({ username: plan.username });
-      this.currentWatchingStream = plan.username;
       await chrome.storage.local.remove(['pendingSwitch']);
     } else if (plan.action === 'snooze') {
       // Persisted: an in-memory snooze died with the next worker suspension.
@@ -509,7 +500,6 @@ class BackgroundWorker {
         }
 
         const currentlyWatching = getChannelFromTwitchUrl(currentUrl);
-        this.currentWatchingStream = currentlyWatching;
 
         // Don't switch if we're already on the target channel page
         if (currentlyWatching && currentlyWatching === stream.username) {
@@ -548,8 +538,6 @@ class BackgroundWorker {
             resolve(false);
             return;
           }
-          this.currentWatchingStream = stream.username;
-
           // Update analytics
           if (this.settings?.premiumStatus) {
             this.recordSwitch(stream.username);
