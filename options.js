@@ -829,7 +829,6 @@ class OptionsManager {
    */
   applyTheme(preview) {
     const theme = preview?.theme || this.settings.theme || 'default';
-    document.body.className = `theme-${theme}`;
 
     // Remove any previously injected theme link(s)
     document.querySelectorAll('link[data-tsr-theme="1"]').forEach((el) => el.remove());

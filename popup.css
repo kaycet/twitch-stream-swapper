@@ -32,10 +32,6 @@ body {
   white-space: nowrap;
 }
 
-.visually-hidden-shell {
-  display: none !important;
-}
-
 /* Header */
 .app-header {
   display: flex;
@@ -551,12 +547,6 @@ input:disabled {
 .fallback-actions {
   display: flex;
   gap: var(--space-1);
-}
-
-.fallback-hint {
-  padding: 0 var(--space-3) var(--space-3);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
 }
 
 /* Footer */
