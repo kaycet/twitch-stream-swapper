@@ -62,6 +62,20 @@ describe('TwitchAPI username validation', () => {
     expect('bad-name' in results).toBe(false);
   });
 
+  it('reports offline for usernames that collide with Object.prototype keys', async () => {
+    // "constructor" is a format-valid Twitch login; on a plain {} result map
+    // the offline lookup returned Object's constructor (truthy), so the
+    // channel showed as permanently live.
+    const fetchMock = vi.fn(async () => okResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    const results = await twitchAPI.checkStreamsStatus(['constructor', 'hasOwnProperty', 'valueOf']);
+
+    expect(results.constructor).toBe(null);
+    expect(results.hasOwnProperty).toBe(null);
+    expect(results.valueOf).toBe(null);
+  });
+
   it('throws when every username is malformed', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okResponse()));
     await expect(twitchAPI.checkStreamsStatus(['ab', 'x'])).rejects.toThrow('Invalid username format');
