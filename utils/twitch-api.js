@@ -274,7 +274,13 @@ class TwitchAPI {
       batches.push(validUsernames.slice(i, i + 100));
     }
 
-    const results = {};
+    // Null-prototype maps: usernames are attacker-ish input used as plain
+    // object keys, and names like "constructor" or "hasOwnProperty" are
+    // format-valid Twitch logins. On a plain {}, an offline "constructor"
+    // looks up Object's constructor function — truthy — and the channel is
+    // reported permanently live (and switchable-to) with a Function as its
+    // stream data.
+    const results = Object.create(null);
     let successCount = 0;
     let lastError = null;
 
@@ -287,8 +293,9 @@ class TwitchAPI {
         // Use the query string directly in the endpoint
         const data = await this._request(`/streams?${loginParams}`, {});
         
-        // Create map of live streams
-        const liveStreams = {};
+        // Create map of live streams (null prototype for the same reason as
+        // `results` above)
+        const liveStreams = Object.create(null);
         if (data.data) {
           data.data.forEach(stream => {
             liveStreams[stream.user_login.toLowerCase()] = stream;

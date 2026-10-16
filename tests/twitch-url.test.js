@@ -22,6 +22,13 @@ describe('twitch-url', () => {
     expect(getChannelFromTwitchUrl('https://www.twitch.tv/following')).toBe(null);
   });
 
+  test('getChannelFromTwitchUrl returns null on subdomains whose first segment is not a channel', () => {
+    expect(getChannelFromTwitchUrl('https://clips.twitch.tv/SomeClipSlug')).toBe(null);
+    expect(getChannelFromTwitchUrl('https://dashboard.twitch.tv/u/somechannel/home')).toBe(null);
+    expect(getChannelFromTwitchUrl('https://player.twitch.tv/?channel=somechannel')).toBe(null);
+    expect(getChannelFromTwitchUrl('https://m.twitch.tv/somechannel')).toBe('somechannel');
+  });
+
   test('isRaidReferrerUrl detects ?referrer=raid', () => {
     expect(isRaidReferrerUrl('https://www.twitch.tv/somechannel?referrer=raid')).toBe(true);
     expect(isRaidReferrerUrl('https://www.twitch.tv/somechannel?referrer=raid&foo=bar')).toBe(true);

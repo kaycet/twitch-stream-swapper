@@ -271,7 +271,12 @@ class StorageManager {
    */
   async saveAnalytics(analytics) {
     const current = await this.getAnalytics();
-    await this.set({ analytics: { ...current, ...analytics } });
+    // Immediate write, same reasoning as saveSettings: the Options page's
+    // "Clear Analytics" awaits this and then shows success, but a debounced
+    // set() resolves before anything is written — closing the tab inside the
+    // debounce window silently dropped the clear. Background-worker callers
+    // write at most once per poll, so immediacy costs nothing there.
+    await this.set({ analytics: { ...current, ...analytics } }, true);
   }
 
   /**

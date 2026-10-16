@@ -14,11 +14,21 @@ export function isTwitchUrl(url) {
   }
 }
 
+// Hosts whose first path segment is a channel name. Other subdomains carry
+// something else there (clips.twitch.tv/<ClipSlug>, dashboard.twitch.tv/u/…,
+// player.twitch.tv?channel=…), and treating that segment as a channel made
+// e.g. category fallback park forever on a clip page it mistook for a
+// channel it was "already watching".
+const CHANNEL_HOSTS = new Set([
+  'twitch.tv', 'www.twitch.tv', 'm.twitch.tv',
+  'twitch.com', 'www.twitch.com', 'm.twitch.com',
+]);
+
 export function getChannelFromTwitchUrl(url) {
   try {
     const u = new URL(url);
     const host = u.hostname.toLowerCase();
-    if (!(host === 'twitch.tv' || host.endsWith('.twitch.tv') || host === 'twitch.com' || host.endsWith('.twitch.com'))) {
+    if (!CHANNEL_HOSTS.has(host)) {
       return null;
     }
     const p = u.pathname || '/';

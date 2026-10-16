@@ -1008,20 +1008,11 @@ class PopupManager {
   }
 
   updateCurrentStream() {
-    const currentStreamDiv = document.getElementById('currentStream');
-    const currentInfo = document.getElementById('currentInfo');
-
     // Highest-priority live channel Auto-Swap would pick (switched-off
-    // channels are skipped, exactly as the background worker does).
+    // channels are skipped, exactly as the background worker does). Shown as
+    // the is-current row highlight; the old "Currently watching" panel this
+    // replaced is gone.
     const liveStream = pickSwitchTarget(this.streams);
-
-    if (liveStream) {
-      currentStreamDiv.style.display = 'block';
-      const title = liveStream.streamData?.title || 'Live';
-      currentInfo.textContent = `${liveStream.username} - ${title}`;
-    } else {
-      currentStreamDiv.style.display = 'none';
-    }
 
     document.querySelectorAll('.stream-item').forEach((el) => {
       el.classList.toggle('is-current', el.dataset.username === liveStream?.username);

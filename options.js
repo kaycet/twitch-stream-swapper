@@ -307,7 +307,11 @@ class OptionsManager {
   setCustomThemeDirty(isDirty) {
     this.customThemeDirty = !!isDirty;
     const btn = document.getElementById('customThemeApplyBtn');
-    if (btn) btn.disabled = !this.customThemeDirty;
+    // Keep the supporter gate: updateCustomThemeVisibility() disables the
+    // button for non-supporters, but this setter runs after it on the theme
+    // change path and used to re-enable it (reachable by keyboard —
+    // pointer-events:none only blocks the mouse).
+    if (btn) btn.disabled = !this.settings?.premiumStatus || !this.customThemeDirty;
   }
 
   scheduleAutoSaveGeneral() {
@@ -624,9 +628,24 @@ class OptionsManager {
       // API errors and returns null, so awaiting it alone could never fail —
       // any invalid Client ID "applied" successfully and silently broke API
       // access. A known-good category must actually resolve to an id.
+      //
+      // With the token broker configured, the probe is meaningless (requests
+      // route through the broker, which never sends the override) — it would
+      // "validate" any garbage ID. Say so instead of pretending to check.
+      // proxyEnabled is only set by initialize(), so initialize first.
       if (clientIdToSave) {
         const previousClientId = this.settings?.clientId || TWITCH_CLIENT_ID;
         await twitchAPI.initialize(clientIdToSave);
+        if (twitchAPI.proxyEnabled) {
+          await storage.saveSettings({ clientId: clientIdToSave });
+          this.settings = { ...this.settings, clientId: clientIdToSave };
+          this.setAdvancedDirty(false);
+          this.showSaveStatus(
+            'Saved — but the built-in token broker is active, so a custom Client ID is not used for requests.',
+            'warning'
+          );
+          return;
+        }
         const probeId = await twitchAPI.getCategoryId('Just Chatting');
         if (!probeId) {
           // Leave this page's API client on the ID that was in effect.
@@ -810,7 +829,6 @@ class OptionsManager {
    */
   applyTheme(preview) {
     const theme = preview?.theme || this.settings.theme || 'default';
-    document.body.className = `theme-${theme}`;
 
     // Remove any previously injected theme link(s)
     document.querySelectorAll('link[data-tsr-theme="1"]').forEach((el) => el.remove());
