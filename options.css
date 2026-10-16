@@ -374,6 +374,16 @@ input[type="time"] {
   color: var(--danger);
 }
 
+/* Emitted by the theme/advanced flows; were unstyled (default dim gray). */
+.save-status.warning {
+  color: var(--warning);
+}
+
+.save-status.loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Footer */
 .made-with-love {
   margin-top: var(--space-5);

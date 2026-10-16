@@ -122,6 +122,11 @@ input:disabled {
   border-color: var(--accent);
 }
 
+/* Emitted for e.g. rate-limit errors (utils/error-messages.js); was unstyled. */
+.status-message.warning {
+  border-color: var(--warning);
+}
+
 /* Cards */
 .behavior-card,
 .fallback-card {
